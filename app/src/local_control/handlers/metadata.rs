@@ -487,13 +487,29 @@ pub(crate) fn pane_list(
     let entries = select_pane_entries(target, ActionKind::PaneList, ctx)?;
     let mut panes = Vec::new();
     for entry in entries {
-        let (is_active, has_terminal_session) = entry.pane_group.read(ctx, |pane_group, ctx| {
-            (
-                pane_group.focused_pane_id(ctx) == entry.pane_id,
-                pane_group
-                    .terminal_view_from_pane_id(entry.pane_id, ctx)
-                    .is_some(),
-            )
+        let (is_active, has_terminal_session, working_directory, code_view) =
+            entry.pane_group.read(ctx, |pane_group, ctx| {
+                let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
+                // Working directory of the focused terminal session, if this is a terminal
+                // pane. `pwd()` is not `local_fs`-gated, so this works in the OSS build.
+                let working_directory =
+                    terminal_view.as_ref().and_then(|tv| tv.as_ref(ctx).pwd());
+                let code_view = pane_group.code_view_from_pane_id(entry.pane_id, ctx);
+                (
+                    pane_group.focused_pane_id(ctx) == entry.pane_id,
+                    terminal_view.is_some(),
+                    working_directory,
+                    code_view,
+                )
+            });
+        // File path of the active tab if this is a code-editor pane. Uses only
+        // non-`local_fs`-gated accessors so it works in the OSS build.
+        let file_path = code_view.and_then(|cv| {
+            cv.read(ctx, |cv, _ctx| {
+                cv.tab_at(cv.active_tab_index())
+                    .and_then(|tab| tab.location())
+                    .map(|location| location.display_path())
+            })
         });
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
@@ -504,6 +520,8 @@ pub(crate) fn pane_list(
             "index": entry.index as u32,
             "is_active": is_active,
             "has_terminal_session": has_terminal_session,
+            "working_directory": working_directory,
+            "file_path": file_path,
         }));
     }
     Ok(json!({
