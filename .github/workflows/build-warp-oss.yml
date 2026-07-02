@@ -1,0 +1,56 @@
+name: build-warp-oss
+
+# 手动触发即可；也可以改成 push 到你的改动分支时自动构建
+on:
+  workflow_dispatch: {}
+  # push:
+  #   branches: [ my-warp-mods ]
+
+jobs:
+  build:
+    runs-on: macos-14          # Apple Silicon 原生 = aarch64-apple-darwin
+    timeout-minutes: 120
+    steps:
+      - name: Checkout (含 LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Pull LFS 对象（关键：NLD 模型是 LFS 指针）
+        run: git lfs install --local && git lfs pull
+
+      - name: Rust target（工具链版本由 rust-toolchain.toml 自动锁定）
+        run: rustup target add aarch64-apple-darwin
+
+      - name: 编译缓存（第二次起会快很多）
+        uses: Swatinem/rust-cache@v2
+
+      - name: 系统依赖（protobuf/protoc 是 warp_multi_agent_api 的 build.rs 必需）
+        run: brew install jq protobuf pkgconf
+
+      - name: Metal 工具链（GUI 渲染需要）
+        run: xcodebuild -downloadComponent MetalToolchain || true
+
+      - name: 安装 cargo-bundle（必须 burtonageo 这个 fork）
+        run: |
+          cargo install cargo-bundle \
+            --git https://github.com/burtonageo/cargo-bundle \
+            --rev ae4c76e92c08774bf54ff077b1c52e3d1cd6c16d --locked
+
+      - name: 构建 + 打包 WarpOss.app（不启动）
+        env:
+          WARP_SKIP_COMMON_SKILLS_INSTALL: "1"   # 跳过联网装 skills
+        run: ./script/run --release --dont-open
+
+      - name: 打 tar（保留可执行位与符号链接，artifact zip 会丢这些）
+        run: |
+          APP="$(find target/release/bundle/osx -maxdepth 1 -name '*.app' | head -1)"
+          echo "bundled app: $APP"
+          test -n "$APP"
+          tar -C "$(dirname "$APP")" -czf WarpOss.app.tar.gz "$(basename "$APP")"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: WarpOss-arm64
+          path: WarpOss.app.tar.gz
