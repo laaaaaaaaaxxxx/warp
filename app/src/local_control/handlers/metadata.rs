@@ -502,15 +502,21 @@ pub(crate) fn pane_list(
                     code_view,
                 )
             });
-        // File path of the active tab if this is a code-editor pane. Uses only
-        // non-`local_fs`-gated accessors so it works in the OSS build.
-        let file_path = code_view.and_then(|cv| {
-            cv.read(ctx, |cv, _ctx| {
-                cv.tab_at(cv.active_tab_index())
-                    .and_then(|tab| tab.location())
-                    .map(|location| location.display_path())
+        // File path + cursor position of the active tab if this is a code-editor
+        // pane. Uses only non-`local_fs`-gated accessors so it works in the OSS
+        // build. `cursor_line`/`cursor_column` are 0-indexed (LSP convention).
+        let (file_path, cursor_line, cursor_column) = code_view
+            .map(|cv| {
+                cv.read(ctx, |cv, cx| {
+                    let file_path = cv
+                        .tab_at(cv.active_tab_index())
+                        .and_then(|tab| tab.location())
+                        .map(|location| location.display_path());
+                    let cursor = cv.active_cursor_position(cx);
+                    (file_path, cursor.map(|c| c.0), cursor.map(|c| c.1))
+                })
             })
-        });
+            .unwrap_or((None, None, None));
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
@@ -522,6 +528,8 @@ pub(crate) fn pane_list(
             "has_terminal_session": has_terminal_session,
             "working_directory": working_directory,
             "file_path": file_path,
+            "cursor_line": cursor_line,
+            "cursor_column": cursor_column,
         }));
     }
     Ok(json!({
