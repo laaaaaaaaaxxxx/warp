@@ -680,6 +680,39 @@ impl CodeReviewView {
         self.active_repo.as_ref().map(|repo| &repo.repo_path)
     }
 
+    /// If a diff editor in this Code Review is currently keyboard-focused,
+    /// returns its `(file_path, line, column)` where `line`/`column` are
+    /// 0-indexed (LSP convention) and `file_path` is the absolute display path.
+    ///
+    /// Code Review hosts one `CodeEditorView` per file (the same editor
+    /// primitive as an editor pane), so this reads `cursor_lsp_position` exactly
+    /// like `CodeView` does; the only extra step is picking the focused file's
+    /// editor out of the file list. Returns `None` when no diff editor is
+    /// focused. Uses only non-`local_fs`-gated accessors so it works in the OSS
+    /// build (external tools such as warpctrl).
+    pub fn focused_editor_cursor(&self, ctx: &AppContext) -> Option<(String, usize, usize)> {
+        let focused = ctx.focused_view_id(self.window_id)?;
+        let CodeReviewViewState::Loaded(state) = self.state() else {
+            return None;
+        };
+        let repo_path = self.repo_path()?;
+        for file_state in state.file_states.values() {
+            let Some(editor_state) = file_state.editor_state.as_ref() else {
+                continue;
+            };
+            let code_editor = editor_state.editor().as_ref(ctx).editor().clone();
+            if code_editor.id() != focused {
+                continue;
+            }
+            let location = code_editor.as_ref(ctx).cursor_lsp_position(ctx);
+            let file_path = repo_path
+                .join(&file_state.file_diff.file_path)
+                .display_path();
+            return Some((file_path, location.line, location.column));
+        }
+        None
+    }
+
     pub(crate) fn repo_is_local(&self) -> Option<bool> {
         self.repo_path().map(LocalOrRemotePath::is_local)
     }
