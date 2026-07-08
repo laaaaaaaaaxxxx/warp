@@ -15,6 +15,7 @@ use settings::Setting as _;
 use warp_core::channel::ChannelState;
 use warpui::{AppContext, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
+use crate::code_review::code_review_view::CodeReviewView;
 use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;
 use crate::local_control::resolver::{reject_target_families, require_active_window_id_for_action};
@@ -511,6 +512,27 @@ pub(crate) fn pane_list(
                     .map(|location| location.display_path())
             })
         });
+        // Code Review lives in the right panel, not the pane group, so its diff
+        // editor is never a pane here. When one of its diff editors is focused,
+        // expose that file path + 0-indexed cursor position on the active pane
+        // (the pane group's focused pane, since Code Review sits outside it), so
+        // external tools can drive jumps just like an editor pane's cursor.
+        let mut cr_cursor: Option<(String, usize, usize)> = None;
+        if is_active {
+            if let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
+                for cr in cr_views {
+                    cr_cursor = cr.read(ctx, |cr, cx| cr.focused_editor_cursor(cx));
+                    if cr_cursor.is_some() {
+                        break;
+                    }
+                }
+            }
+        }
+        let (code_review_file_path, code_review_cursor_line, code_review_cursor_column) =
+            match cr_cursor {
+                Some((path, line, column)) => (Some(path), Some(line), Some(column)),
+                None => (None, None, None),
+            };
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
@@ -522,6 +544,9 @@ pub(crate) fn pane_list(
             "has_terminal_session": has_terminal_session,
             "working_directory": working_directory,
             "file_path": file_path,
+            "code_review_file_path": code_review_file_path,
+            "code_review_cursor_line": code_review_cursor_line,
+            "code_review_cursor_column": code_review_cursor_column,
         }));
     }
     Ok(json!({
