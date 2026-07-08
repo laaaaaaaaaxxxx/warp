@@ -641,6 +641,18 @@ impl CodeView {
         })
     }
 
+    /// Returns the active tab's cursor position as 0-indexed `(line, column)`
+    /// (LSP convention). Mirrors `selected_text`'s access chain and reads
+    /// `cursor_lsp_position` (not `local_fs`-gated), so warpctrl can expose the
+    /// editor cursor in `pane inspect` in the OSS build.
+    pub fn active_cursor_position(&self, ctx: &AppContext) -> Option<(usize, usize)> {
+        self.tab_at(self.active_tab_index).map(|tab| {
+            let editor = tab.editor_view.as_ref(ctx).editor();
+            let location = editor.as_ref(ctx).cursor_lsp_position(ctx);
+            (location.line, location.column)
+        })
+    }
+
     pub fn local_path(&self, ctx: &AppContext) -> Option<PathBuf> {
         self.tab_at(self.active_tab_index).and_then(|t| {
             t.editor_view.as_ref(ctx).file_id().and_then(|file_id| {
