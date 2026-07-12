@@ -24,10 +24,13 @@ fn main() -> Result<()> {
     if cfg!(debug_assertions) {
         state = state.with_additional_features(warp_core::features::DEBUG_FLAGS);
     }
-    // OSS self-build: enable the local-control server (warpctrl) so external tools
-    // can query pane working directory / file path. Normally gated to dogfood builds.
-    state = state
-        .with_additional_features(&[warp_core::features::FeatureFlag::WarpControlCli]);
+    // OSS self-build: enable dogfood-gated features we lead-use.
+    // - WarpControlCli: local-control server (warpctrl) for pane cwd / file-path queries.
+    // - OscHyperlinks: OSC 8 terminal hyperlinks (PR #9850 snapshot); drop once stable-enabled.
+    state = state.with_additional_features(&[
+        warp_core::features::FeatureFlag::WarpControlCli,
+        warp_core::features::FeatureFlag::OscHyperlinks,
+    ]);
     ChannelState::set(state);
 
     warp::run()
