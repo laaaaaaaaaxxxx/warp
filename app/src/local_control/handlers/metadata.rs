@@ -488,7 +488,7 @@ pub(crate) fn pane_list(
     let entries = select_pane_entries(target, ActionKind::PaneList, ctx)?;
     let mut panes = Vec::new();
     for entry in entries {
-        let (is_active, has_terminal_session, working_directory, code_view) =
+        let (is_active, has_terminal_session, working_directory, code_view, code_review_open) =
             entry.pane_group.read(ctx, |pane_group, ctx| {
                 let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
                 // Working directory of the focused terminal session, if this is a terminal
@@ -501,6 +501,12 @@ pub(crate) fn pane_list(
                     terminal_view.is_some(),
                     working_directory,
                     code_view,
+                    // Per-tab Code Review panel visibility. The right panel is
+                    // CR-only (resource center / AI assistant use workspace-level
+                    // flags), and this flag is unconditionally set false whenever
+                    // the panel closes — unlike CodeReviewView.is_open, which can
+                    // stay true when the close path fails to find the cached view.
+                    pane_group.right_panel_open,
                 )
             });
         // File path + cursor position of the active tab if this is a code-editor
@@ -555,6 +561,7 @@ pub(crate) fn pane_list(
             "code_review_file_path": code_review_file_path,
             "code_review_cursor_line": code_review_cursor_line,
             "code_review_cursor_column": code_review_cursor_column,
+            "code_review_open": code_review_open,
         }));
     }
     Ok(json!({
