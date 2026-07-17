@@ -1,0 +1,108 @@
+name: sync-upstream
+
+# 把 oss-custom 的补丁重建到上游最新，结果只推 staging 分支，绝不碰 oss-custom。
+# 补丁清单不写死在这里——每次运行现算 upstream..oss-custom，git 是唯一事实源。
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "同步到上游的哪个 ref"
+        default: master
+        required: true
+      staging_branch:
+        description: "结果推到哪个 staging 分支"
+        default: staging-sync
+        required: true
+      drop:
+        description: "要丢弃的补丁短 SHA（空格分隔，留空=全部保留）"
+        default: ""
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout oss-custom（需全历史做 rebase）
+        uses: actions/checkout@v4
+        with:
+          ref: oss-custom
+          fetch-depth: 0
+
+      - name: 挂 upstream 并 fetch
+        run: |
+          set -euo pipefail
+          git remote add upstream https://github.com/warpdotdev/warp.git
+          git fetch --no-tags upstream "${{ inputs.upstream_ref }}"
+          git config user.name  "warp-oss-sync"
+          git config user.email "warp-oss-sync@users.noreply.github.com"
+
+      - name: 现状对账（补丁清单以 git 为准）
+        run: |
+          set -euo pipefail
+          UP="upstream/${{ inputs.upstream_ref }}"
+          {
+            echo "## 同步前现状"
+            echo "上游 $UP = \`$(git rev-parse --short "$UP")\`"
+            echo "oss-custom  = \`$(git rev-parse --short origin/oss-custom)\`"
+            echo "共同基点    = \`$(git merge-base --short origin/oss-custom "$UP" 2>/dev/null || git rev-parse --short "$(git merge-base origin/oss-custom "$UP")")\`"
+            echo "落后上游    = **$(git rev-list --count "origin/oss-custom..$UP")** commit"
+            echo
+            echo "### 现有补丁（\`$UP..oss-custom\`）"
+            echo '```'
+            git log --oneline --reverse "$UP..origin/oss-custom"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 重建补丁到上游最新
+        env:
+          DROP: ${{ inputs.drop }}
+          STAGING: ${{ inputs.staging_branch }}
+        run: |
+          set -euo pipefail
+          UP="upstream/${{ inputs.upstream_ref }}"
+          git checkout -B "$STAGING" "$UP"
+          for c in $(git rev-list --reverse "$UP..origin/oss-custom"); do
+            short="${c:0:8}"
+            subj="$(git log -1 --format=%s "$c")"
+            if [ -n "$DROP" ] && printf '%s\n' $DROP | grep -qx "$short"; then
+              echo "::notice::DROP  $short  $subj"
+              echo "- 🗑️ DROP \`$short\` $subj" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            echo "::group::PICK  $short  $subj"
+            if ! git cherry-pick "$c"; then
+              echo "::error::CONFLICT 在 $short $subj"
+              {
+                echo "### ❌ 冲突：\`$short\` $subj"
+                echo '```'
+                git diff --name-only --diff-filter=U
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            echo "::endgroup::"
+            echo "- ✅ PICK \`$short\` → \`$(git rev-parse --short HEAD)\` $subj" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: range-diff 对账（新旧补丁序列逐条比）
+        run: |
+          set -euo pipefail
+          UP="upstream/${{ inputs.upstream_ref }}"
+          OLD_BASE="$(git merge-base origin/oss-custom "$UP")"
+          {
+            echo "### range-diff（旧序列 vs 新序列）"
+            echo '```'
+            git range-diff "$OLD_BASE..origin/oss-custom" "$UP..${{ inputs.staging_branch }}"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: 推 staging（oss-custom 原地不动）
+        run: |
+          set -euo pipefail
+          git push --force origin "HEAD:refs/heads/${{ inputs.staging_branch }}"
+          echo "### ✅ 已推 \`${{ inputs.staging_branch }}\` = \`$(git rev-parse --short HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
