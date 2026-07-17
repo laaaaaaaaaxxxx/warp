@@ -32,6 +32,8 @@ jobs:
         with:
           ref: oss-custom
           fetch-depth: 0
+          # GITHUB_TOKEN 不许推 .github/workflows/ 下的文件，而 rebase 必然带上游的 workflow 改动
+          token: ${{ secrets.SYNC_PAT }}
 
       - name: 挂 upstream 并 fetch
         run: |
