@@ -5530,6 +5530,16 @@ impl Workspace {
         ctx.notify();
     }
 
+    /// Reads the manual color-selection state for a tab, if the index is valid.
+    ///
+    /// The read-side mirror of [`Self::set_tab_color`], for external inspection
+    /// (e.g. WarpControl `pane inspect`). Returns `None` when the index is out
+    /// of range. Callers that only care about an explicit override should match
+    /// on [`SelectedTabColor::Color`].
+    pub fn tab_selected_color(&self, index: usize) -> Option<SelectedTabColor> {
+        self.tabs.get(index).map(|tab| tab.selected_color)
+    }
+
     /// Programmatically sets the manual color override for a tab.
     ///
     /// - `Color(_)` applies that color.

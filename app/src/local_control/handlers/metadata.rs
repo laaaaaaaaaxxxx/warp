@@ -22,6 +22,7 @@ use crate::local_control::resolver::{reject_target_families, require_active_wind
 use crate::local_control::LocalControlBridge;
 use crate::pane_group::{PaneGroup, PaneId};
 use crate::settings::{AISettings, CodeSettings};
+use crate::tab::SelectedTabColor;
 use crate::workspace::tab_settings::TabSettings;
 use crate::workspace::Workspace;
 
@@ -545,6 +546,20 @@ pub(crate) fn pane_list(
                 Some((path, line, column)) => (Some(path), Some(line), Some(column)),
                 None => (None, None, None),
             };
+        // Manual tab color, exposed per-pane the same way as `code_review_open`
+        // (color is a tab-level attribute in Warp, not per-pane). Only an
+        // explicit `Color(_)` counts as configured; `Unset` (directory-default
+        // fallback) and `Cleared` both report unconfigured. See the workspace
+        // `set_tab_color` / `tab_selected_color` pair.
+        let color = workspace_for_window(entry.window_id, ActionKind::PaneList, ctx)?
+            .and_then(|workspace| {
+                workspace.read(ctx, |workspace, _| {
+                    match workspace.tab_selected_color(entry.tab_index) {
+                        Some(SelectedTabColor::Color(color)) => Some(color),
+                        _ => None,
+                    }
+                })
+            });
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
@@ -562,6 +577,8 @@ pub(crate) fn pane_list(
             "code_review_cursor_line": code_review_cursor_line,
             "code_review_cursor_column": code_review_cursor_column,
             "code_review_open": code_review_open,
+            "color_configured": color.is_some(),
+            "color": color,
         }));
     }
     Ok(json!({
