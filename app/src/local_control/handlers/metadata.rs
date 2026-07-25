@@ -23,6 +23,7 @@ use crate::local_control::resolver::{reject_target_families, require_active_wind
 use crate::pane_group::{PaneGroup, PaneId};
 use crate::settings::{AISettings, CodeSettings};
 use crate::tab::SelectedTabColor;
+use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
 use crate::workspace::Workspace;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -489,14 +490,26 @@ pub(crate) fn pane_list(
     let entries = select_pane_entries(target, ActionKind::PaneList, ctx)?;
     let mut panes = Vec::new();
     for entry in entries {
-        let (is_active, has_terminal_session, working_directory, code_view, code_review_open) =
-            entry.pane_group.read(ctx, |pane_group, ctx| {
+        let (
+            is_active,
+            has_terminal_session,
+            working_directory,
+            code_view,
+            code_review_open,
+            rich_input_open,
+        ) = entry.pane_group.read(ctx, |pane_group, ctx| {
                 let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
                 // Working directory of the focused terminal session, if this is a terminal
                 // pane. `pwd()` is not `local_fs`-gated, so this works in the OSS build.
                 let working_directory =
                     terminal_view.as_ref().and_then(|tv| tv.as_ref(ctx).pwd());
                 let code_view = pane_group.code_view_from_pane_id(entry.pane_id, ctx);
+                // CLI agent Rich Input visibility. Keyed by terminal view id
+                // in CLIAgentSessionsModel, so this is per-pane, unlike the
+                // tab-level code_review_open below.
+                let rich_input_open = terminal_view.as_ref().is_some_and(|tv| {
+                    CLIAgentSessionsModel::as_ref(ctx).is_input_open(tv.id())
+                });
                 (
                     pane_group.focused_pane_id(ctx) == entry.pane_id,
                     terminal_view.is_some(),
@@ -508,6 +521,7 @@ pub(crate) fn pane_list(
                     // the panel closes — unlike CodeReviewView.is_open, which can
                     // stay true when the close path fails to find the cached view.
                     pane_group.right_panel_open,
+                    rich_input_open,
                 )
             });
         // File path + cursor position of the active tab if this is a code-editor
@@ -577,6 +591,7 @@ pub(crate) fn pane_list(
             "code_review_cursor_line": code_review_cursor_line,
             "code_review_cursor_column": code_review_cursor_column,
             "code_review_open": code_review_open,
+            "rich_input_open": rich_input_open,
             "color_configured": color.is_some(),
             "color": color,
         }));
