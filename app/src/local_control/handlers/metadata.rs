@@ -497,6 +497,7 @@ pub(crate) fn pane_list(
             code_view,
             code_review_open,
             rich_input_open,
+            cli_agent,
         ) = entry.pane_group.read(ctx, |pane_group, ctx| {
                 let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
                 // Working directory of the focused terminal session, if this is a terminal
@@ -510,6 +511,15 @@ pub(crate) fn pane_list(
                 let rich_input_open = terminal_view.as_ref().is_some_and(|tv| {
                     CLIAgentSessionsModel::as_ref(ctx).is_input_open(tv.id())
                 });
+                // Which CLI agent, if any, is registered for this pane. None for
+                // plain terminal and Warp Agent panes, where Rich Input does not
+                // exist at all -- there rich_input_open=false means absent, not
+                // closed, and external tools must not try to open it.
+                let cli_agent = terminal_view.as_ref().and_then(|tv| {
+                    CLIAgentSessionsModel::as_ref(ctx)
+                        .session(tv.id())
+                        .map(|session| session.agent.to_serialized_name())
+                });
                 (
                     pane_group.focused_pane_id(ctx) == entry.pane_id,
                     terminal_view.is_some(),
@@ -522,6 +532,7 @@ pub(crate) fn pane_list(
                     // stay true when the close path fails to find the cached view.
                     pane_group.right_panel_open,
                     rich_input_open,
+                    cli_agent,
                 )
             });
         // File path + cursor position of the active tab if this is a code-editor
@@ -592,6 +603,7 @@ pub(crate) fn pane_list(
             "code_review_cursor_column": code_review_cursor_column,
             "code_review_open": code_review_open,
             "rich_input_open": rich_input_open,
+            "cli_agent": cli_agent,
             "color_configured": color.is_some(),
             "color": color,
         }));
