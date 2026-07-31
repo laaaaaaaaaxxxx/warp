@@ -657,12 +657,11 @@ fn tab_group_header_shows_while_renaming() {
 }
 
 #[test]
-fn tab_group_header_shows_for_multi_pane_tabs_without_custom_title() {
-    // The #9098 case: an auto-named multi-pane tab. Each row only shows the
-    // per-pane title (e.g. `travelplan` + `main`), so without a group header
-    // there is no way to tell two such tabs apart in the sidebar.
-    assert!(should_show_tab_group_header(false, false, 2));
-    assert!(should_show_tab_group_header(false, false, 5));
+fn tab_group_header_hidden_for_multi_pane_tabs_without_custom_title() {
+    // WarpOss 临时补丁：分组标题是 opt-in。未命名的多 pane 组不渲染标题——
+    // 上游在此显示的是聚焦 pane 的标题，随焦点跳变且被 CLI agent summary 覆盖。
+    assert!(!should_show_tab_group_header(false, false, 2));
+    assert!(!should_show_tab_group_header(false, false, 5));
 }
 
 #[test]
@@ -685,11 +684,12 @@ fn tab_group_header_distinguishes_two_auto_named_multi_pane_tabs() {
     // fix only tab 1 showed a header; after the fix every multi-pane tab
     // gets one so the user can tell them apart at a glance.
     let renders_header: Vec<bool> = vec![
-        should_show_tab_group_header(true, false, 2),  // tab 1
-        should_show_tab_group_header(false, false, 2), // tab 2
-        should_show_tab_group_header(false, false, 2), // tab 3
+        should_show_tab_group_header(true, false, 2),  // tab 1 已命名
+        should_show_tab_group_header(false, false, 2), // tab 2 未命名
+        should_show_tab_group_header(false, false, 2), // tab 3 未命名
     ];
-    assert_eq!(renders_header, vec![true, true, true]);
+    // WarpOss 临时补丁：只有命名过的组才出标题。
+    assert_eq!(renders_header, vec![true, false, false]);
 }
 
 #[test]

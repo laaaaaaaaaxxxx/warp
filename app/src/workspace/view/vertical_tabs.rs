@@ -3926,7 +3926,13 @@ fn should_show_tab_group_header(
     is_being_renamed: bool,
     visible_pane_count: usize,
 ) -> bool {
-    has_custom_title || is_being_renamed || visible_pane_count > 1
+    // WarpOss 临时补丁：去掉 `|| visible_pane_count > 1`，让分组标题回到 opt-in。
+    // 上游 b193c5ef (PR #10738) 为修 #9098 加了这一项，使未命名的多 pane 组
+    // 也强制渲染标题；而该标题无自有内容，只能取聚焦 pane 的标题——焦点在编辑器
+    // 即文件绝对路径，在 CLI agent 即 plugin 推来的 summary，且被覆盖后不恢复。
+    // 退役条件（任一即摘）：上游把该显示做成设置项 / #12688 落地使标题有稳定来源 /
+    // 该区域重构掉此判据 / 本机不再使用 pane 粒度。
+    has_custom_title || is_being_renamed
 }
 
 fn search_fragments_contain_query(fragments: &[String], query_lower: &str) -> bool {
