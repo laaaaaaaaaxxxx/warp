@@ -5,10 +5,12 @@ use crate::features::FeatureFlag;
 use crate::local_control::handlers::metadata::SurfaceDestination;
 
 #[test]
-fn staged_input_rejects_line_breaks_and_control_sequences() {
-    assert!(validate_staged_input_text(ActionKind::InputInsert, "safe staged text").is_ok());
+fn staged_input_accepts_multiline_but_rejects_control_sequences() {
+    for text in ["safe staged text", "line\nbreak", "tab\tbreak", "multi\nline\twith\ttabs\n"] {
+        assert!(validate_staged_input_text(ActionKind::InputInsert, text).is_ok());
+    }
 
-    for text in ["line\nbreak", "line\rbreak", "tab\tbreak", "\u{1b}[31m"] {
+    for text in ["line\rbreak", "crlf\r\nbreak", "\u{1b}[31m", "bell\u{7}"] {
         let error = validate_staged_input_text(ActionKind::InputInsert, text).err();
         assert!(error.is_some_and(|error| error.code == ErrorCode::InvalidParams));
     }

@@ -635,14 +635,16 @@ pub(super) fn validate_staged_input_text(
     action: ActionKind,
     text: &str,
 ) -> Result<(), ControlError> {
+    // Staged text lands in the multiline input editor buffer; submission is a
+    // separate explicit path, so newlines and tabs are plain editor content.
     if text
         .chars()
-        .any(|character| character == '\n' || character == '\r' || character.is_control())
+        .any(|character| character.is_control() && character != '\n' && character != '\t')
     {
         return Err(ControlError::new(
             ErrorCode::InvalidParams,
             format!(
-                "{} rejects newlines, carriage returns, and control characters",
+                "{} rejects control characters other than newlines and tabs",
                 action.as_str()
             ),
         ));
