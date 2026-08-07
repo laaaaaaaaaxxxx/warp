@@ -846,6 +846,9 @@ pub enum WorkspaceAction {
     OpenWorktreeAddRepoPicker,
     SaveCurrentTabAsNewConfig(usize),
     SyncTrafficLights,
+    /// Opens or closes the tools panel because the pointer entered or left it.
+    /// Only governs hover-opened panels — one opened manually stays put.
+    SetLeftPanelPeek(bool),
     /// Opens a tab config file in the editor and dismisses the associated error toast.
     OpenTabConfigErrorFile {
         path: PathBuf,
@@ -1185,6 +1188,7 @@ impl WorkspaceAction {
             | DismissFeatureIntroModal
             | SaveCurrentTabAsNewConfig(_)
             | SyncTrafficLights
+            | SetLeftPanelPeek(_)
             | OpenTabConfigErrorFile { .. }
             | TabConfigSidecarMakeDefault { .. }
             | TabConfigSidecarEditConfig { .. }

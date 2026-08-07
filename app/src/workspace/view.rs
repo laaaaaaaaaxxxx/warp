@@ -557,6 +557,21 @@ pub const TAB_BAR_HEIGHT: f32 = 34.;
 pub const PANEL_HEADER_HEIGHT: f32 = TAB_BAR_HEIGHT;
 /// The hover area height for states where the tab bar is revealed on hover.
 const TAB_BAR_HOVER_HEIGHT: f32 = 12.;
+/// Width of the strip the collapsed tools panel leaves behind to catch the
+/// pointer. Sized to WCAG 2.5.5 (AAA, 44px) rather than the 24px AA floor: the
+/// pointer sweeps past this strip rather than aiming at it, and it must be
+/// reachable without being shoved against the physical screen edge — on a
+/// multi-display setup that would land it on the neighbouring screen instead.
+/// The width is free in practice, since a collapsed panel has nothing to show.
+const TOOLS_PANEL_HOVER_STRIP_WIDTH: f32 = 44.;
+/// Pointer must rest on the strip this long before the tools panel peeks open,
+/// so merely crossing it on the way elsewhere doesn't trigger it.
+///
+/// There is deliberately no matching hover-*out* delay. `Hoverable` keeps that
+/// timer inside the shared `MouseState`, but this element is rebuilt every frame
+/// (strip → panel → strip), so the timer never survives to fire: with an out
+/// delay set, the panel is never told the pointer left and stays open forever.
+const TOOLS_PANEL_HOVER_IN_DELAY: Duration = Duration::from_millis(220);
 const TAB_BAR_PADDING_LEFT: f32 = 4.;
 const TAB_BAR_PADDING_RIGHT: f32 = 8.;
 const TITLE_BAR_SEARCH_BAR_MAX_WIDTH: f32 = 320.;
@@ -1009,6 +1024,15 @@ pub struct Workspace {
     tab_mru_order: Vec<EntityId>,
     pub(crate) hovered_tab_index: Option<TabBarHoverIndex>,
     tab_bar_hover_state: MouseStateHandle,
+    /// Hover state shared by the collapsed tools panel's strip and by the panel
+    /// itself while peeked. Sharing is load-bearing: when the strip gives way to
+    /// the panel the pointer is already inside it, and a fresh state would start
+    /// out un-hovered — so the panel would never observe the pointer leaving and
+    /// would stay open forever.
+    tools_panel_hover_state: MouseStateHandle,
+    /// True while the tools panel is open only because the pointer brought it
+    /// out. A panel opened manually is not peeking and never auto-collapses.
+    left_panel_peeking: bool,
     tab_fixed_width: Option<f32>,
     traffic_light_mouse_states: TrafficLightMouseStates,
     /// Tab groups in this workspace, keyed by id.
@@ -3369,6 +3393,8 @@ impl Workspace {
             tab_mru_order: Vec::new(),
             hovered_tab_index: None,
             tab_bar_hover_state: Default::default(),
+            tools_panel_hover_state: Default::default(),
+            left_panel_peeking: false,
             traffic_light_mouse_states: Default::default(),
             tab_groups: HashMap::new(),
             horizontal_tab_group_mouse_states: RefCell::default(),
@@ -22472,6 +22498,33 @@ impl Workspace {
         }
     }
 
+    /// Adds one config-driven panel. A collapsed tools panel is special: it
+    /// still renders (as a bare hover strip), but must bypass
+    /// `add_panel_with_separator` — it is an invisible hit area, so it must not
+    /// draw a separator nor count as a panel for whatever follows it.
+    fn add_config_panel(
+        &self,
+        panels_view: &mut Flex,
+        prev_panel_added: &mut bool,
+        item: &HeaderToolbarItemKind,
+        pane_group: &PaneGroup,
+        config: &HeaderToolbarChipSelection,
+        app: &AppContext,
+    ) {
+        if *item == HeaderToolbarItemKind::ToolsPanel && !pane_group.left_panel_open {
+            if let Some(strip) = self.render_config_panel(item, pane_group, config, app) {
+                panels_view.add_child(strip);
+            }
+            return;
+        }
+        Self::add_panel_with_separator(
+            panels_view,
+            prev_panel_added,
+            self.render_config_panel(item, pane_group, config, app),
+            app,
+        );
+    }
+
     fn render_panels(
         &self,
         app: &AppContext,
@@ -22497,10 +22550,12 @@ impl Workspace {
             let pane_group = self.active_tab_pane_group().as_ref(app);
 
             for item in config.left_items() {
-                Self::add_panel_with_separator(
+                self.add_config_panel(
                     &mut panels_view,
                     &mut prev_panel_added,
-                    self.render_config_panel(&item, pane_group, &config, app),
+                    &item,
+                    pane_group,
+                    &config,
                     app,
                 );
             }
@@ -22537,10 +22592,12 @@ impl Workspace {
             let pane_group = self.active_tab_pane_group().as_ref(app);
 
             for item in config.right_items() {
-                Self::add_panel_with_separator(
+                self.add_config_panel(
                     &mut panels_view,
                     &mut prev_panel_added,
-                    self.render_config_panel(&item, pane_group, &config, app),
+                    &item,
+                    pane_group,
+                    &config,
                     app,
                 );
             }
@@ -22648,10 +22705,37 @@ impl Workspace {
                 )
             }
             HeaderToolbarItemKind::ToolsPanel => {
-                if !pane_group.left_panel_open || warpui::platform::is_mobile_device() {
+                if warpui::platform::is_mobile_device() || self.left_panel_views.is_empty() {
                     return None;
                 }
-                Some(ChildView::new(&self.left_panel_view).finish())
+                let is_open = pane_group.left_panel_open;
+                // A panel opened by hand keeps its own lifetime — no hover wrapper,
+                // so nothing can take it away except another manual toggle.
+                if is_open && !self.left_panel_peeking {
+                    return Some(ChildView::new(&self.left_panel_view).finish());
+                }
+                // Otherwise one single Hoverable spans both states: closed it is a
+                // bare strip for the pointer to land on, open it is the panel
+                // itself. Keeping it one element (and one mouse state) is what lets
+                // the pointer's departure still be seen after the panel replaced
+                // the strip underneath it.
+                let child: Box<dyn Element> = if is_open {
+                    ChildView::new(&self.left_panel_view).finish()
+                } else {
+                    ConstrainedBox::new(Empty::new().finish())
+                        .with_width(TOOLS_PANEL_HOVER_STRIP_WIDTH)
+                        .finish()
+                };
+                Some(
+                    Hoverable::new(self.tools_panel_hover_state.clone(), |_| child)
+                        .with_hover_in_delay(TOOLS_PANEL_HOVER_IN_DELAY)
+                        .on_hover(|is_hovered, ctx, _app, _position| {
+                            ctx.dispatch_typed_action(WorkspaceAction::SetLeftPanelPeek(
+                                is_hovered,
+                            ));
+                        })
+                        .finish(),
+                )
             }
             HeaderToolbarItemKind::CodeReview => {
                 if !pane_group.right_panel_open {
@@ -24401,6 +24485,9 @@ impl TypedActionView for Workspace {
                 }
             }
             ToggleLeftPanel => {
+                // Toggling by hand settles the panel's fate either way, so it is
+                // no longer the pointer's to take back.
+                self.left_panel_peeking = false;
                 let active_pane_group = self.active_tab_pane_group().clone();
                 let was_open = active_pane_group.read(ctx, |pg, _| pg.left_panel_open);
 
@@ -26055,6 +26142,27 @@ impl TypedActionView for Workspace {
             }
             SyncTrafficLights => {
                 self.sync_window_button_visibility(ctx);
+            }
+            SetLeftPanelPeek(should_peek) => {
+                let pane_group = self.active_tab_pane_group().clone();
+                let is_open = pane_group.read(ctx, |pg, _| pg.left_panel_open);
+                if *should_peek {
+                    // Only an already-closed panel can be peeked; leave a
+                    // manually opened one alone so it keeps its own lifetime.
+                    if is_open || self.left_panel_views.is_empty() {
+                        return;
+                    }
+                    self.left_panel_peeking = true;
+                    self.open_left_panel(ctx);
+                } else {
+                    if !self.left_panel_peeking {
+                        return;
+                    }
+                    self.left_panel_peeking = false;
+                    if is_open {
+                        self.close_left_panel(ctx);
+                    }
+                }
             }
         };
         if action.should_save_app_state_on_action() {
