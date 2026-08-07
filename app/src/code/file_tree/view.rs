@@ -383,6 +383,16 @@ impl FileTreeView {
             if !existing_remote_ids.is_empty() {
                 self.insert_or_update_remote_roots(&existing_remote_ids, false, ctx);
             }
+
+            // The subscription above only delivers future events; replay the current
+            // active file so a reveal missed while inactive isn't lost.
+            let pending_reveal = self
+                .active_file_model
+                .as_ref()
+                .and_then(|model| model.as_ref(ctx).active_file().cloned());
+            if let Some(location) = pending_reveal {
+                self.handle_code_event(&ActiveFileEvent::ActiveFileChanged { location }, ctx);
+            }
         } else {
             ctx.unsubscribe_to_model(&self.repository_metadata_model);
             self.unsubscribe_from_active_file_model(ctx);
