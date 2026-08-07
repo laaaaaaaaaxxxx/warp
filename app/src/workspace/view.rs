@@ -22498,10 +22498,9 @@ impl Workspace {
         }
     }
 
-    /// Adds one config-driven panel. A collapsed tools panel is special: it
-    /// still renders (as a bare hover strip), but must bypass
-    /// `add_panel_with_separator` — it is an invisible hit area, so it must not
-    /// draw a separator nor count as a panel for whatever follows it.
+    /// Adds one config-driven panel. A collapsed tools panel contributes nothing
+    /// here: its hover strip is laid over the panels row by `render_panels`
+    /// instead, so that it occupies no width and leaves no blank column behind.
     fn add_config_panel(
         &self,
         panels_view: &mut Flex,
@@ -22512,9 +22511,6 @@ impl Workspace {
         app: &AppContext,
     ) {
         if *item == HeaderToolbarItemKind::ToolsPanel && !pane_group.left_panel_open {
-            if let Some(strip) = self.render_config_panel(item, pane_group, config, app) {
-                panels_view.add_child(strip);
-            }
             return;
         }
         Self::add_panel_with_separator(
@@ -22523,6 +22519,55 @@ impl Workspace {
             self.render_config_panel(item, pane_group, config, app),
             app,
         );
+    }
+
+    /// Lays the collapsed tools panel's hover strip over the edge of the panels
+    /// row. It is a `Stack` positioned child rather than a row child on purpose:
+    /// as a row child its width would be real, leaving a permanent blank column
+    /// where the panel used to be. Overlaid, it costs no width at all.
+    fn overlay_tools_panel_hover_strip(
+        &self,
+        panels: Box<dyn Element>,
+        config: &HeaderToolbarChipSelection,
+    ) -> Box<dyn Element> {
+        let on_left = config
+            .left_items()
+            .contains(&HeaderToolbarItemKind::ToolsPanel);
+        let (parent_anchor, child_anchor) = if on_left {
+            (ParentAnchor::MiddleLeft, ChildAnchor::MiddleLeft)
+        } else {
+            (ParentAnchor::MiddleRight, ChildAnchor::MiddleRight)
+        };
+        // A full-height column so the strip spans the whole edge; the width is
+        // the only thing it actually asserts.
+        let strip = ConstrainedBox::new(
+            Flex::column()
+                .with_main_axis_size(MainAxisSize::Max)
+                .finish(),
+        )
+        .with_width(TOOLS_PANEL_HOVER_STRIP_WIDTH)
+        .finish();
+        let strip = Hoverable::new(self.tools_panel_hover_state.clone(), |_| strip)
+            .with_hover_in_delay(TOOLS_PANEL_HOVER_IN_DELAY)
+            .on_hover(|is_hovered, ctx, _app, _position| {
+                if is_hovered {
+                    ctx.dispatch_typed_action(WorkspaceAction::SetLeftPanelPeek(true));
+                }
+            })
+            .finish();
+        Stack::new()
+            .with_constrain_absolute_children()
+            .with_child(panels)
+            .with_positioned_child(
+                strip,
+                OffsetPositioning::offset_from_parent(
+                    vec2f(0., 0.),
+                    ParentOffsetBounds::ParentByPosition,
+                    parent_anchor,
+                    child_anchor,
+                ),
+            )
+            .finish()
     }
 
     fn render_panels(
@@ -22658,7 +22703,21 @@ impl Workspace {
             }
         }
 
-        panels_view.finish()
+        let panels = panels_view.finish();
+        // Lay the hover strip over the edge only while the tools panel is collapsed.
+        if vertical_tabs_active
+            && !warpui::platform::is_mobile_device()
+            && !self.left_panel_views.is_empty()
+            && !self.active_tab_pane_group().as_ref(app).left_panel_open
+        {
+            let config = TabSettings::as_ref(app)
+                .header_toolbar_chip_selection
+                .clone();
+            if config.contains_item(&HeaderToolbarItemKind::ToolsPanel) {
+                return self.overlay_tools_panel_hover_strip(panels, &config);
+            }
+        }
+        panels
     }
 
     fn is_mailbox_on_left(config: &HeaderToolbarChipSelection) -> bool {
@@ -22705,36 +22764,26 @@ impl Workspace {
                 )
             }
             HeaderToolbarItemKind::ToolsPanel => {
-                if warpui::platform::is_mobile_device() || self.left_panel_views.is_empty() {
+                if !pane_group.left_panel_open || warpui::platform::is_mobile_device() {
                     return None;
                 }
-                let is_open = pane_group.left_panel_open;
                 // A panel opened by hand keeps its own lifetime — no hover wrapper,
                 // so nothing can take it away except another manual toggle.
-                if is_open && !self.left_panel_peeking {
+                if !self.left_panel_peeking {
                     return Some(ChildView::new(&self.left_panel_view).finish());
                 }
-                // Otherwise one single Hoverable spans both states: closed it is a
-                // bare strip for the pointer to land on, open it is the panel
-                // itself. Keeping it one element (and one mouse state) is what lets
-                // the pointer's departure still be seen after the panel replaced
-                // the strip underneath it.
-                let child: Box<dyn Element> = if is_open {
-                    ChildView::new(&self.left_panel_view).finish()
-                } else {
-                    ConstrainedBox::new(Empty::new().finish())
-                        .with_width(TOOLS_PANEL_HOVER_STRIP_WIDTH)
-                        .finish()
-                };
+                // Peeked open: the same Hoverable and mouse state that the collapsed
+                // strip used, so the pointer's departure is still observed after the
+                // panel took the strip's place under it.
                 Some(
-                    Hoverable::new(self.tools_panel_hover_state.clone(), |_| child)
-                        .with_hover_in_delay(TOOLS_PANEL_HOVER_IN_DELAY)
-                        .on_hover(|is_hovered, ctx, _app, _position| {
-                            ctx.dispatch_typed_action(WorkspaceAction::SetLeftPanelPeek(
-                                is_hovered,
-                            ));
-                        })
-                        .finish(),
+                    Hoverable::new(self.tools_panel_hover_state.clone(), |_| {
+                        ChildView::new(&self.left_panel_view).finish()
+                    })
+                    .with_hover_in_delay(TOOLS_PANEL_HOVER_IN_DELAY)
+                    .on_hover(|is_hovered, ctx, _app, _position| {
+                        ctx.dispatch_typed_action(WorkspaceAction::SetLeftPanelPeek(is_hovered));
+                    })
+                    .finish(),
                 )
             }
             HeaderToolbarItemKind::CodeReview => {
