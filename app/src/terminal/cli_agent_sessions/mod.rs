@@ -107,6 +107,8 @@ pub enum CLIAgentInputEntrypoint {
     AutoShow,
     /// Rich input was opened to mirror a shared-session participant's state.
     SharedSessionSync,
+    /// Rich input was opened through the local-control API.
+    LocalControl,
 }
 
 impl CLIAgentSessionContext {

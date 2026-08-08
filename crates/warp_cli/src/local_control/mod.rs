@@ -380,6 +380,9 @@ pub enum InputCommand {
 
     /// Replace the input buffer without submitting it.
     Replace(TextTargetArgs),
+
+    /// Open the CLI agent rich input without changing UI focus.
+    Open(TargetArgs),
 }
 
 #[derive(Debug, Clone, Subcommand)]

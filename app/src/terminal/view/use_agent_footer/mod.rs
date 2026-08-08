@@ -1065,7 +1065,7 @@ impl TerminalView {
         }
     }
 
-    pub(in crate::terminal) fn open_cli_agent_rich_input(
+    pub(crate) fn open_cli_agent_rich_input(
         &mut self,
         entrypoint: CLIAgentInputEntrypoint,
         ctx: &mut ViewContext<Self>,

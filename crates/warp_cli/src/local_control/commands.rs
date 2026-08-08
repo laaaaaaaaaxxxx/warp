@@ -537,6 +537,7 @@ pub(super) fn run_input_command(
             TextParams { text: args.text },
             output_format,
         ),
+        InputCommand::Open(args) => run_action(args, ActionKind::InputOpen, output_format),
     }
 }
 
