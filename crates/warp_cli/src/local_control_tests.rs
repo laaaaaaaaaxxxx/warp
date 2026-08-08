@@ -428,6 +428,7 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             ActionKind::InputReplace,
             vec!["warpctrl", "input", "replace", "hello"],
         ),
+        (ActionKind::InputOpen, vec!["warpctrl", "input", "open"]),
         (ActionKind::ThemeList, vec!["warpctrl", "theme", "list"]),
         (ActionKind::ThemeGet, vec!["warpctrl", "theme", "get"]),
         (
@@ -649,6 +650,7 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
         ControlCommand::Input(command) => match command {
             InputCommand::Insert(_) => Some(ActionKind::InputInsert),
             InputCommand::Replace(_) => Some(ActionKind::InputReplace),
+            InputCommand::Open(_) => Some(ActionKind::InputOpen),
         },
         ControlCommand::Theme(command) => match command {
             ThemeCommand::List(_) => Some(ActionKind::ThemeList),
