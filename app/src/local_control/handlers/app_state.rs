@@ -33,6 +33,7 @@ use crate::local_control::resolver::{
 use crate::palette::PaletteMode;
 use crate::pane_group::{ActivationReason, Direction, PaneGroupAction};
 use crate::server::telemetry::PaletteSource;
+use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
 use crate::settings_view::SettingsSection;
 #[cfg(feature = "local_fs")]
 use crate::util::file::external_editor::EditorSettings;
@@ -108,6 +109,7 @@ pub(crate) fn handle(
         ActionKind::SessionReopenClosed => session_reopen_closed(instance_id, target, ctx),
         ActionKind::InputInsert => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputReplace => input_text(instance_id, action, params, target, true, ctx),
+        ActionKind::InputOpen => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::SurfaceSettingsOpen => surface_settings_open(instance_id, params, target, ctx),
         ActionKind::SurfaceCommandPaletteOpen => surface_palette_open(
             instance_id,
@@ -605,8 +607,6 @@ fn input_text(
     replace_buffer: bool,
     ctx: &mut ModelContext<LocalControlBridge>,
 ) -> Result<serde_json::Value, ControlError> {
-    let text = text_param(params)?;
-    validate_staged_input_text(action_kind, &text)?;
     let pane_group = target_pane_group(action_kind, target, ctx)?;
     let pane_id = input_target_pane_id(action_kind, target, &pane_group, ctx)?;
     let terminal_view = pane_group
@@ -619,6 +619,17 @@ fn input_text(
                 format!("{} requires a terminal input target", action_kind.as_str()),
             )
         })?;
+    if matches!(action_kind, ActionKind::InputOpen) {
+        terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view.open_cli_agent_rich_input(
+                CLIAgentInputEntrypoint::LocalControl,
+                ctx,
+            );
+        });
+        return Ok(ack(instance_id, action_kind));
+    }
+    let text = text_param(params)?;
+    validate_staged_input_text(action_kind, &text)?;
     terminal_view.update(ctx, |terminal_view, ctx| {
         terminal_view.input().update(ctx, |input, ctx| {
             if replace_buffer {
