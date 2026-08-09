@@ -650,7 +650,7 @@ impl TerminalView {
         }
     }
 
-    pub(super) fn submit_cli_agent_rich_input(
+    pub(crate) fn submit_cli_agent_rich_input(
         &mut self,
         text: String,
         ctx: &mut ViewContext<Self>,
