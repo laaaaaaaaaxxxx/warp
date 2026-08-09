@@ -538,6 +538,12 @@ pub(super) fn run_input_command(
             output_format,
         ),
         InputCommand::Open(args) => run_action(args, ActionKind::InputOpen, output_format),
+        InputCommand::Submit(args) => run_action_with_params(
+            args.target,
+            ActionKind::InputSubmit,
+            TextParams { text: args.text },
+            output_format,
+        ),
     }
 }
 
