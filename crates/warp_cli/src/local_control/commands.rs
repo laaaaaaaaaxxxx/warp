@@ -30,6 +30,15 @@ pub(super) fn run_surface_command(
         SurfaceCommand::List(args) => {
             run_action_with_params(args, ActionKind::SurfaceList, EmptyParams {}, output_format)
         }
+        SurfaceCommand::Resize(args) => run_action_with_params(
+            args.target,
+            ActionKind::SurfaceResize,
+            local_control::protocol::SurfaceResizeParams {
+                surface: args.surface,
+                width: args.width,
+            },
+            output_format,
+        ),
         SurfaceCommand::Settings(command) => match command {
             SurfaceSettingsCommand::Open(args) => run_action_with_params(
                 args.target,

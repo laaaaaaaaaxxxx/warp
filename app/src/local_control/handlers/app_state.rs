@@ -145,6 +145,7 @@ pub(crate) fn handle(
             target,
             ctx,
         ),
+        ActionKind::SurfaceResize => surface_resize(instance_id, params, target, ctx),
         ActionKind::SurfaceCodeReviewOpen => surface_code_review_open(instance_id, target, ctx),
         ActionKind::SurfaceCodeReviewToggle | ActionKind::SurfaceRightPanelToggle => {
             workspace_action(
@@ -294,6 +295,76 @@ fn surface_theme_picker_open(
             workspace.handle_action(&WorkspaceAction::ShowThemeChooserForActiveTheme, ctx);
         }
     });
+    Ok(ack(instance_id, action))
+}
+
+/// Sets a surface's width, in points, on the targeted window.
+///
+/// Writes the very `ResizableState` the drag bar writes, so the value rides the
+/// window snapshot across restarts and gets clamped to that surface's own bounds
+/// at the next layout — no size policy is introduced here.
+fn surface_resize(
+    instance_id: &Option<InstanceId>,
+    params: &serde_json::Value,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    use crate::terminal::resizable_data::{ModalType, ResizableData};
+
+    let action = ActionKind::SurfaceResize;
+    let ::local_control::protocol::SurfaceResizeParams { surface, width } = decode_params(params)?;
+    // Only surfaces owning a ResizableStateHandle can be sized. `code_review` is
+    // deliberately absent: it lives inside `right_panel` and has no width of its
+    // own, so sizing it means sizing `right_panel`.
+    let modal = match surface.as_str() {
+        "left_panel" => ModalType::LeftPanelWidth,
+        "right_panel" => ModalType::RightPanelWidth,
+        "command_search" => ModalType::UniversalSearchWidth,
+        "ai_assistant" => ModalType::WarpAIWidth,
+        other => {
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                format!(
+                    "surface.resize cannot size {other}; sizable surfaces are \
+                     left_panel, right_panel, command_search, ai_assistant"
+                ),
+            ));
+        }
+    };
+    let window_id = target_window_id_for_target(ctx, target, action)?;
+    let resizable_data = ResizableData::handle(ctx);
+    let state = resizable_data
+        .as_ref(ctx)
+        .get_handle(window_id, modal)
+        .ok_or_else(|| {
+            ControlError::new(
+                ErrorCode::MissingTarget,
+                "surface.resize could not resolve the window's resizable state",
+            )
+        })?;
+    {
+        // Upstream's own setter does not clamp; `clamp_size` is the same bounds
+        // pass the drag path runs, so reuse it rather than inventing a policy.
+        let mut state = state.lock().unwrap();
+        state.set_size(width);
+        state.clamp_size();
+    }
+    // Repaint the two persistent panels. The remaining surfaces are modals that
+    // read the handle when they next open, so they need no nudge.
+    if let Some(views) =
+        ctx.views_of_type::<crate::workspace::view::left_panel::LeftPanelView>(window_id)
+    {
+        for view in views {
+            view.update(ctx, |_, ctx| ctx.notify());
+        }
+    }
+    if let Some(views) =
+        ctx.views_of_type::<crate::workspace::view::right_panel::RightPanelView>(window_id)
+    {
+        for view in views {
+            view.update(ctx, |_, ctx| ctx.notify());
+        }
+    }
     Ok(ack(instance_id, action))
 }
 
