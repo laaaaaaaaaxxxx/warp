@@ -518,6 +518,8 @@ use crate::terminal::{
 use crate::themes::theme::WarpTheme;
 use crate::throttle::throttle;
 use crate::ui_components::icons::{self};
+#[cfg(feature = "local_fs")]
+use crate::uri::parse_open_file_editor_url;
 use crate::util::bindings::{
     CustomAction, custom_tag_to_keystroke, keybinding_name_to_display_string,
     keybinding_name_to_keystroke, set_custom_keybinding,
@@ -1758,6 +1760,12 @@ pub enum Event {
     #[cfg(feature = "local_fs")]
     OpenCodeInWarp {
         source: CodeSource,
+        layout: EditorLayout,
+    },
+    #[cfg(feature = "local_fs")]
+    OpenFileEditorLink {
+        location: LocalOrRemotePath,
+        line_col: Option<LineAndColumnArg>,
         layout: EditorLayout,
     },
     #[cfg(feature = "local_fs")]
@@ -18564,9 +18572,30 @@ impl TerminalView {
     /// Open an OSC 8 hyperlink URI. The URI comes from untrusted terminal
     /// output, so it is only opened if it parses as a URL.
     fn open_hyperlink_uri(&self, uri: &str, ctx: &mut ViewContext<Self>) {
-        if url::Url::parse(uri).is_err() {
+        let Ok(url) = url::Url::parse(uri) else {
+            return;
+        };
+
+        #[cfg(feature = "local_fs")]
+        if url.scheme() == ChannelState::url_scheme()
+            && url.host_str() == Some("action")
+            && url.path() == "/open_file_editor"
+            && let Ok((path, line_col)) = parse_open_file_editor_url(&url)
+            && let Some(location @ LocalOrRemotePath::Remote(_)) = self
+                .active_session
+                .as_ref(ctx)
+                .location_for_path(path.to_string_lossy().as_ref(), ctx)
+        {
+            // Keep the originating SSH host so the same path is not reopened on the local machine.
+            ctx.notify();
+            ctx.emit(Event::OpenFileEditorLink {
+                location,
+                line_col,
+                layout: *EditorSettings::as_ref(ctx).open_file_layout.value(),
+            });
             return;
         }
+
         ctx.notify();
         ctx.open_url(uri);
     }

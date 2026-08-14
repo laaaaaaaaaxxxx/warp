@@ -883,7 +883,7 @@ fn parse_positive_usize_query_param(url: &Url, name: &str) -> Result<Option<usiz
     Ok(Some(value))
 }
 
-fn parse_open_file_editor_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)> {
+pub(crate) fn parse_open_file_editor_url(url: &Url) -> Result<(PathBuf, Option<LineAndColumnArg>)> {
     let raw_path = url
         .query_pairs()
         .find(|(k, _)| k == "path")
