@@ -13,6 +13,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use settings::Setting as _;
 use warp_core::channel::ChannelState;
+use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{AppContext, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
 use crate::code_review::code_review_view::CodeReviewView;
@@ -555,7 +556,7 @@ pub(crate) fn pane_list(
         // expose that file path + 0-indexed cursor position on the active pane
         // (the pane group's focused pane, since Code Review sits outside it), so
         // external tools can drive jumps just like an editor pane's cursor.
-        let mut cr_cursor: Option<(String, usize, usize)> = None;
+        let mut cr_cursor: Option<(LocalOrRemotePath, usize, usize)> = None;
         if is_active {
             if let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
                 for cr in cr_views {
@@ -566,11 +567,25 @@ pub(crate) fn pane_list(
                 }
             }
         }
-        let (code_review_file_path, code_review_cursor_line, code_review_cursor_column) =
-            match cr_cursor {
-                Some((path, line, column)) => (Some(path), Some(line), Some(column)),
-                None => (None, None, None),
-            };
+        let (
+            code_review_file_path,
+            code_review_remote_host_id,
+            code_review_cursor_line,
+            code_review_cursor_column,
+        ) = match cr_cursor {
+            Some((location, line, column)) => {
+                let remote_host_id = location
+                    .as_remote()
+                    .map(|remote| remote.host_id.to_string());
+                (
+                    Some(location.display_path()),
+                    remote_host_id,
+                    Some(line),
+                    Some(column),
+                )
+            }
+            None => (None, None, None, None),
+        };
         // Manual tab color, exposed per-pane the same way as `code_review_open`
         // (color is a tab-level attribute in Warp, not per-pane). Only an
         // explicit `Color(_)` counts as configured; `Unset` (directory-default
@@ -599,6 +614,7 @@ pub(crate) fn pane_list(
             "cursor_line": cursor_line,
             "cursor_column": cursor_column,
             "code_review_file_path": code_review_file_path,
+            "code_review_remote_host_id": code_review_remote_host_id,
             "code_review_cursor_line": code_review_cursor_line,
             "code_review_cursor_column": code_review_cursor_column,
             "code_review_open": code_review_open,
