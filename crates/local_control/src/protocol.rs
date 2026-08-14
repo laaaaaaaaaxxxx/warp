@@ -95,6 +95,8 @@ pub struct DirectionParams {
 pub struct FileOpenParams {
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_host_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
