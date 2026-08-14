@@ -1068,6 +1068,20 @@ fn handle_terminal_view_event(
                 });
             }
             #[cfg(feature = "local_fs")]
+            Event::OpenFileEditorLink {
+                location,
+                line_col,
+                layout,
+            } => {
+                ctx.emit(pane_group::Event::OpenCodeInWarp {
+                    source: CodeSource::FileTree {
+                        location: location.clone(),
+                    },
+                    layout: *layout,
+                    line_col: *line_col,
+                });
+            }
+            #[cfg(feature = "local_fs")]
             Event::PreviewCodeInWarp { source } => {
                 ctx.emit(pane_group::Event::PreviewCodeInWarp {
                     source: source.clone(),
