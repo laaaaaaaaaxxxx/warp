@@ -144,12 +144,19 @@ pub struct RenameParams {
     pub title: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// `Eq` dropped for `width`; nothing keys a collection on these params.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResizeParams {
-    pub direction: Direction,
+    /// Required for the stepping path; ignored when `width` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Direction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amount: Option<u32>,
+    /// Absolute width in points for the targeted pane; the pane sharing its
+    /// divider absorbs the remainder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

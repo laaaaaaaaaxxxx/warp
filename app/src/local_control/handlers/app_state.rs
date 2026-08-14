@@ -529,7 +529,27 @@ fn pane_resize(
     target: &TargetSelector,
     ctx: &mut ModelContext<LocalControlBridge>,
 ) -> Result<serde_json::Value, ControlError> {
-    let ResizeParams { direction, amount } = decode_params(params)?;
+    let ResizeParams {
+        direction,
+        amount,
+        width,
+    } = decode_params(params)?;
+    if let Some(width) = width {
+        // Absolute path: the pane named by the target is set to `width`, so no
+        // direction is involved and focus is left where it is.
+        let pane_group = active_target_pane_group(ActionKind::PaneResize, target, ctx)?;
+        let pane_id = target_pane_id(ActionKind::PaneResize, target, &pane_group, ctx)?;
+        pane_group.update(ctx, |pane_group, ctx| {
+            pane_group.set_pane_width(pane_id, width, ctx);
+        });
+        return Ok(ack(instance_id, ActionKind::PaneResize));
+    }
+    let direction = direction.ok_or_else(|| {
+        ControlError::new(
+            ErrorCode::InvalidParams,
+            "pane.resize requires either direction or width",
+        )
+    })?;
     let amount = amount.unwrap_or(1);
     if amount > MAX_PANE_RESIZE_STEPS {
         return Err(ControlError::new(
