@@ -27,9 +27,14 @@ fn main() -> Result<()> {
     // OSS self-build: enable dogfood-gated features we lead-use.
     // - WarpControlCli: local-control server (warpctrl) for pane cwd / file-path queries.
     // - OscHyperlinks: OSC 8 terminal hyperlinks (PR #9850 snapshot); drop once stable-enabled.
+    // - SshRemoteServer: file tree + code review over SSH. In RELEASE_FLAGS, which only
+    //   light up under `release_bundle`; this build path (script/run) never sets it, so
+    //   enable just this one instead of the whole release feature set (which drags in
+    //   Autoupdate and would overwrite the self-build).
     state = state.with_additional_features(&[
         warp_core::features::FeatureFlag::WarpControlCli,
         warp_core::features::FeatureFlag::OscHyperlinks,
+        warp_core::features::FeatureFlag::SshRemoteServer,
     ]);
     ChannelState::set(state);
 
