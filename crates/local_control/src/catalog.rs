@@ -48,7 +48,6 @@ pub enum ActionParameterSpec {
     Query,
     Rename,
     Resize,
-    SurfaceResize,
     TabActivate,
     TabClose,
     TabCreate,
@@ -291,7 +290,6 @@ define_action_catalog! {
         SurfaceVerticalTabsOpen => { name: "surface.vertical_tabs.open", status: Implemented, target: Surface, params: None, result: Acknowledgement },
         SurfaceVerticalTabsToggle => { name: "surface.vertical_tabs.toggle", status: Implemented, target: Surface, params: None, result: Acknowledgement },
         SurfaceAgentManagementOpen => { name: "surface.agent_management.open", status: Implemented, target: Surface, params: None, result: Acknowledgement },
-        SurfaceResize => { name: "surface.resize", status: Implemented, target: Surface, params: SurfaceResize, result: Acknowledgement },
     }
 
     file {

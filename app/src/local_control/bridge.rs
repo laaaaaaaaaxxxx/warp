@@ -121,7 +121,6 @@ impl LocalControlBridge {
             | ActionKind::SurfaceVerticalTabsOpen
             | ActionKind::SurfaceVerticalTabsToggle
             | ActionKind::SurfaceAgentManagementOpen
-            | ActionKind::SurfaceResize
             | ActionKind::FileOpen => app_state::handle(
                 &self.instance_id,
                 request.action.kind,

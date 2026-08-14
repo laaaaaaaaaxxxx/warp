@@ -392,9 +392,6 @@ pub enum InputCommand {
 pub enum SurfaceCommand {
     /// List available and unavailable tour surfaces.
     List(TargetArgs),
-
-    /// Set a surface's width, in points.
-    Resize(SurfaceResizeArgs),
     /// Open settings surfaces.
     #[command(subcommand)]
     Settings(SurfaceSettingsCommand),
@@ -696,20 +693,6 @@ pub struct PaneResizeArgs {
     /// divider absorbs the remainder. Ignores --direction.
     #[arg(long = "width")]
     pub width: Option<f32>,
-}
-
-#[derive(Debug, Clone, Args)]
-pub struct SurfaceResizeArgs {
-    #[command(flatten)]
-    pub target: TargetArgs,
-
-    /// Surface to size, named as `surface list` names it.
-    #[arg(long = "surface")]
-    pub surface: String,
-
-    /// New width in points.
-    #[arg(long = "width")]
-    pub width: f32,
 }
 
 #[derive(Debug, Clone, Args)]

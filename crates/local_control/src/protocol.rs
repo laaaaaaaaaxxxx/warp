@@ -159,15 +159,6 @@ pub struct ResizeParams {
     pub width: Option<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SurfaceResizeParams {
-    /// Surface to size, named as `surface.list` names it.
-    pub surface: String,
-    /// New width in points.
-    pub width: f32,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TabActivateParams {

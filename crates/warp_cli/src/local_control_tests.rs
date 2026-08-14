@@ -507,18 +507,6 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
         ),
         (ActionKind::SurfaceList, vec!["warpctrl", "surface", "list"]),
         (
-            ActionKind::SurfaceResize,
-            vec![
-                "warpctrl",
-                "surface",
-                "resize",
-                "--surface",
-                "right_panel",
-                "--width",
-                "480",
-            ],
-        ),
-        (
             ActionKind::SurfaceSettingsOpen,
             vec!["warpctrl", "surface", "settings", "open"],
         ),
@@ -701,7 +689,6 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
         },
         ControlCommand::Surface(command) => match command {
             SurfaceCommand::List(_) => Some(ActionKind::SurfaceList),
-            SurfaceCommand::Resize(_) => Some(ActionKind::SurfaceResize),
             SurfaceCommand::Settings(command) => match command {
                 SurfaceSettingsCommand::Open(_) => Some(ActionKind::SurfaceSettingsOpen),
             },

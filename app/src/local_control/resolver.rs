@@ -46,9 +46,6 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         ActionParameterSpec::Query => parse_params::<QueryParams>(action),
         ActionParameterSpec::Rename => parse_params::<RenameParams>(action),
         ActionParameterSpec::Resize => parse_params::<ResizeParams>(action),
-        ActionParameterSpec::SurfaceResize => {
-            parse_params::<::local_control::protocol::SurfaceResizeParams>(action)
-        }
         ActionParameterSpec::TabActivate => parse_params::<TabActivateParams>(action),
         ActionParameterSpec::TabClose => parse_params::<TabCloseParams>(action),
         ActionParameterSpec::TabCreate => parse_params::<TabCreateParams>(action),
