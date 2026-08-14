@@ -533,6 +533,15 @@ impl PaneData {
         self.root.reset_pane_sizes(border_id)
     }
 
+    pub fn set_pane_width_by_id(
+        &mut self,
+        pane_id: PaneId,
+        width: f32,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> bool {
+        self.root.set_pane_width_by_id(pane_id, width, ctx)
+    }
+
     pub fn adjust_pane_size_by_id(
         &mut self,
         pane_id: PaneId,
@@ -765,6 +774,20 @@ impl PaneNode {
         match self {
             PaneNode::Leaf(_) => false,
             PaneNode::Branch(branch) => branch.reset_pane_sizes(border_id),
+        }
+    }
+
+    /// Same contract as [`PaneNode::adjust_pane_size_by_id`]: `true` hands the
+    /// match back for a parent branch to act on.
+    pub fn set_pane_width_by_id(
+        &mut self,
+        pane_id: PaneId,
+        width: f32,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> bool {
+        match self {
+            PaneNode::Leaf(id) => *id == pane_id,
+            PaneNode::Branch(branch) => branch.set_pane_width_by_id(pane_id, width, ctx),
         }
     }
 
@@ -1205,6 +1228,63 @@ impl PaneBranch {
         false
     }
 
+    /// Gives the matched pane `width` points and the rest of the pair to the
+    /// pane it shares a divider with. Absolute: the outcome depends only on
+    /// `width`, not on how the split currently sits, so repeating the call
+    /// lands in the same place.
+    pub fn set_pane_width_by_id(
+        &mut self,
+        pane_id: PaneId,
+        width: f32,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> bool {
+        let mut matched = None;
+        for (idx, (_, node)) in self.nodes.iter_mut().enumerate() {
+            if node.set_pane_width_by_id(pane_id, width, ctx) {
+                matched = Some(idx);
+                break;
+            }
+        }
+        let Some(idx) = matched else {
+            return false;
+        };
+        // Only a horizontal branch expresses a width; hand a vertical one up,
+        // same as the delta path does.
+        if self.axis != SplitDirection::Horizontal {
+            return true;
+        }
+
+        let divider_idx = idx.min(self.dividers.len() - 1);
+        let size_1 = self.nodes[divider_idx].1.pane_size(ctx).x();
+        let size_2 = self.nodes[divider_idx + 1].1.pane_size(ctx).x();
+        let total_size = size_1 + size_2;
+        if total_size <= 0. {
+            return false;
+        }
+
+        let flex_1 = self.nodes[divider_idx].0.0;
+        let flex_2 = self.nodes[divider_idx + 1].0.0;
+        let total_flex = flex_1 + flex_2;
+
+        // Same floor the drag path enforces; no size policy is added here.
+        let minimum_pane_size = get_minimum_pane_size(ctx);
+        let target_size = width
+            .max(minimum_pane_size)
+            .min(total_size - minimum_pane_size);
+        let target_flex = (target_size / total_size * total_flex)
+            .max(0.)
+            .min(total_flex);
+
+        let (left_flex, right_flex) = if idx == divider_idx {
+            (target_flex, total_flex - target_flex)
+        } else {
+            (total_flex - target_flex, target_flex)
+        };
+        self.nodes[divider_idx].0 = PaneFlex(left_flex);
+        self.nodes[divider_idx + 1].0 = PaneFlex(right_flex);
+        false
+    }
+
     // Get the size of a branch by recursively adding the size of its children.
     pub fn size(&self, ctx: &mut ViewContext<PaneGroup>) -> Vector2F {
         match self.axis {
@@ -1581,5 +1661,18 @@ impl From<crate::launch_configs::launch_config::SplitDirection> for SplitDirecti
                 SplitDirection::Vertical
             }
         }
+    }
+}
+
+// Deliberately here and not in `pane_group/mod.rs`: that file is a hot upstream
+// file and every line added there is a rebase conflict paid on each sync.
+// `tree` is a child module of `pane_group`, so it still reaches private state.
+impl PaneGroup {
+    /// Sets `pane_id` to `width` points; the pane sharing its divider absorbs
+    /// the remainder.
+    pub fn set_pane_width(&mut self, pane_id: PaneId, width: f32, ctx: &mut ViewContext<Self>) {
+        self.panes.set_pane_width_by_id(pane_id, width, ctx);
+        ctx.notify();
+        ctx.emit(super::Event::AppStateChanged);
     }
 }

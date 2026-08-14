@@ -686,11 +686,16 @@ pub struct PaneResizeArgs {
     #[command(flatten)]
     pub target: TargetArgs,
 
-    #[arg(long = "direction", value_enum)]
-    pub direction: CliCardinalDirection,
+    #[arg(long = "direction", value_enum, required_unless_present = "width")]
+    pub direction: Option<CliCardinalDirection>,
 
     #[arg(long = "amount")]
     pub amount: Option<u32>,
+
+    /// Absolute width in points for the targeted pane; the pane sharing its
+    /// divider absorbs the remainder. Ignores --direction.
+    #[arg(long = "width")]
+    pub width: Option<f32>,
 }
 
 #[derive(Debug, Clone, Args)]
