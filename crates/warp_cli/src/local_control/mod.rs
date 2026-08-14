@@ -728,6 +728,9 @@ pub struct QueryArgs {
 pub struct FileOpenArgs {
     pub path: String,
 
+    #[arg(long = "remote-host-id")]
+    pub remote_host_id: Option<String>,
+
     #[arg(long = "line")]
     pub line: Option<u32>,
 

@@ -8980,7 +8980,7 @@ impl Workspace {
     }
 
     #[cfg(feature = "local_fs")]
-    fn open_code(
+    pub(crate) fn open_code(
         &mut self,
         source: CodeSource,
         layout: EditorLayout,

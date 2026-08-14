@@ -695,6 +695,7 @@ pub(super) fn run_file_command(
             ActionKind::FileOpen,
             FileOpenParams {
                 path: args.path,
+                remote_host_id: args.remote_host_id,
                 line: args.line,
                 column: args.column,
                 new_tab: args.new_tab,

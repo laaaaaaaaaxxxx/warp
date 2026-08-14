@@ -14,8 +14,16 @@ use ::local_control::protocol::{
 use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
 use serde_json::json;
 #[cfg(feature = "local_fs")]
+use settings::Setting;
+#[cfg(feature = "local_fs")]
+use warp_core::HostId;
+#[cfg(feature = "local_fs")]
 use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warp_util::path::LineAndColumnArg;
+#[cfg(feature = "local_fs")]
+use warp_util::remote_path::RemotePath;
+#[cfg(feature = "local_fs")]
+use warp_util::standardized_path::StandardizedPath;
 #[cfg(feature = "local_fs")]
 use warpui::SingletonEntity;
 use warpui::{AppContext, ModelContext, TypedActionView};
@@ -793,27 +801,55 @@ fn file_open(
     }
     let line_and_column = line_and_column(&params)?;
     let workspace = target_workspace(ActionKind::FileOpen, target, ctx)?;
-    #[cfg(feature = "local_fs")]
-    let path = resolve_file_open_path(&params.path, target, ctx)?;
     activate_target(&workspace, ActionKind::FileOpen, target, ctx)?;
     #[cfg(feature = "local_fs")]
     {
-        let layout = params.new_tab.then_some(EditorLayout::NewTab);
-        let file_target =
-            resolve_file_target_to_open_in_warp(&path, EditorSettings::as_ref(ctx), layout);
-        workspace.update(ctx, |workspace, ctx| {
-            workspace.open_file_with_target(
-                path.clone(),
-                file_target,
-                line_and_column,
-                CodeSource::Link {
-                    path,
-                    range_start: None,
-                    range_end: None,
-                },
-                ctx,
-            );
-        });
+        if let Some(remote_host_id) = params.remote_host_id {
+            let path = StandardizedPath::try_new(&params.path).map_err(|error| {
+                ControlError::with_details(
+                    ErrorCode::InvalidParams,
+                    "file.open remote path is invalid",
+                    error.to_string(),
+                )
+            })?;
+            let location =
+                LocalOrRemotePath::Remote(RemotePath::new(HostId::new(remote_host_id), path));
+            let layout = if params.new_tab {
+                EditorLayout::NewTab
+            } else {
+                *EditorSettings::as_ref(ctx).open_file_layout.value()
+            };
+            workspace.update(ctx, |workspace, ctx| {
+                // The host must come from the caller because the same path may exist on several
+                // remote hosts.
+                workspace.open_code(
+                    CodeSource::FileTree { location },
+                    layout,
+                    line_and_column,
+                    false,
+                    &[],
+                    ctx,
+                );
+            });
+        } else {
+            let path = resolve_file_open_path(&params.path, target, ctx)?;
+            let layout = params.new_tab.then_some(EditorLayout::NewTab);
+            let file_target =
+                resolve_file_target_to_open_in_warp(&path, EditorSettings::as_ref(ctx), layout);
+            workspace.update(ctx, |workspace, ctx| {
+                workspace.open_file_with_target(
+                    path.clone(),
+                    file_target,
+                    line_and_column,
+                    CodeSource::Link {
+                        path,
+                        range_start: None,
+                        range_end: None,
+                    },
+                    ctx,
+                );
+            });
+        }
         Ok(ack(instance_id, ActionKind::FileOpen))
     }
     #[cfg(not(feature = "local_fs"))]
