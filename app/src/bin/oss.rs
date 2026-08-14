@@ -24,10 +24,12 @@ fn main() -> Result<()> {
     if cfg!(debug_assertions) {
         state = state.with_additional_features(warp_core::features::DEBUG_FLAGS);
     }
-    // OSS self-build: enable the local-control server (warpctrl) so external tools
-    // can query pane working directory / file path. Normally gated to dogfood builds.
-    state = state
-        .with_additional_features(&[warp_core::features::FeatureFlag::WarpControlCli]);
+    // SshRemoteServer is normally release-bundle-only. Enabling all release flags here would also
+    // enable Autoupdate, which can overwrite self-builds.
+    state = state.with_additional_features(&[
+        warp_core::features::FeatureFlag::WarpControlCli,
+        warp_core::features::FeatureFlag::SshRemoteServer,
+    ]);
     ChannelState::set(state);
 
     warp::run()
