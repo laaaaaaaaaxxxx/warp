@@ -17,6 +17,7 @@ use warp_util::local_or_remote_path::LocalOrRemotePath;
 use warpui::{AppContext, ModelContext, SingletonEntity, ViewHandle, WindowId};
 
 use crate::code_review::code_review_view::CodeReviewView;
+use crate::remote_server::manager::RemoteServerManager;
 use crate::drive::settings::WarpDriveSettings;
 use crate::features::FeatureFlag;
 use crate::local_control::LocalControlBridge;
@@ -495,6 +496,7 @@ pub(crate) fn pane_list(
             is_active,
             has_terminal_session,
             working_directory,
+            working_directory_location,
             code_view,
             code_review_open,
             rich_input_open,
@@ -505,6 +507,11 @@ pub(crate) fn pane_list(
                 // pane. `pwd()` is not `local_fs`-gated, so this works in the OSS build.
                 let working_directory =
                     terminal_view.as_ref().and_then(|tv| tv.as_ref(ctx).pwd());
+                // #fix EPY-545 `pwd()` 只回显示路径，SSH session 的 host 在这里被丢掉。
+                // `pwd_as_local_or_remote()` 把 CWD 与 session 的 host_id 配成一对。
+                let working_directory_location = terminal_view
+                    .as_ref()
+                    .and_then(|tv| tv.as_ref(ctx).pwd_as_local_or_remote(ctx));
                 let code_view = pane_group.code_view_from_pane_id(entry.pane_id, ctx);
                 // CLI agent Rich Input visibility. Keyed by terminal view id
                 // in CLIAgentSessionsModel, so this is per-pane, unlike the
@@ -525,6 +532,7 @@ pub(crate) fn pane_list(
                     pane_group.focused_pane_id(ctx) == entry.pane_id,
                     terminal_view.is_some(),
                     working_directory,
+                    working_directory_location,
                     code_view,
                     // Per-tab Code Review panel visibility. The right panel is
                     // CR-only (resource center / AI assistant use workspace-level
@@ -539,18 +547,29 @@ pub(crate) fn pane_list(
         // File path + cursor position of the active tab if this is a code-editor
         // pane. Uses only non-`local_fs`-gated accessors so it works in the OSS
         // build. `cursor_line`/`cursor_column` are 0-indexed (LSP convention).
-        let (file_path, cursor_line, cursor_column) = code_view
+        let (file_path, file_remote_host, cursor_line, cursor_column) = code_view
             .map(|cv| {
                 cv.read(ctx, |cv, cx| {
-                    let file_path = cv
+                    let location = cv
                         .tab_at(cv.active_tab_index())
-                        .and_then(|tab| tab.location())
-                        .map(|location| location.display_path());
+                        .and_then(|tab| tab.location());
+                    let file_path = location.map(|location| location.display_path());
+                    // #fix EPY-545 编辑器 pane 的文件身份同样是 (host, path)。此前只取
+                    // display_path()，SSH 文件退化成裸路径——与 EPY-531 在 Code Review
+                    // 上修掉的是同一个病，只是那次没覆盖编辑器 pane。
+                    let file_remote_host = location
+                        .and_then(|location| location.as_remote())
+                        .map(|remote| remote.host_id.clone());
                     let cursor = cv.active_cursor_position(cx);
-                    (file_path, cursor.map(|c| c.0), cursor.map(|c| c.1))
+                    (
+                        file_path,
+                        file_remote_host,
+                        cursor.map(|c| c.0),
+                        cursor.map(|c| c.1),
+                    )
                 })
             })
-            .unwrap_or((None, None, None));
+            .unwrap_or((None, None, None, None));
         // Code Review lives in the right panel, not the pane group, so its diff
         // editor is never a pane here. When one of its diff editors is focused,
         // expose that file path + 0-indexed cursor position on the active pane
@@ -586,6 +605,23 @@ pub(crate) fn pane_list(
             }
             None => (None, None, None, None),
         };
+        // #fix EPY-545 pane 级远端身份，来源沿用 file_path / working_directory 的互斥：
+        // 编辑器 pane 取文件位置的 host，终端 pane 取 session CWD 的 host。除 id 外另出
+        // label——`host_id` 是远端 server 每次会话新生成的 UUID
+        // (`server_model.rs` `Uuid::new_v4`)，外部工具手里只有 SSH 别名，两者的映射只有
+        // `RemoteServerManager` 有。不出 label，外部就只能猜 host，而那是明令禁止的。
+        let remote_host = file_remote_host.or_else(|| {
+            working_directory_location
+                .as_ref()
+                .and_then(|location| location.as_remote())
+                .map(|remote| remote.host_id.clone())
+        });
+        let remote_host_label = remote_host.as_ref().and_then(|host_id| {
+            RemoteServerManager::as_ref(ctx)
+                .host_label(host_id)
+                .map(str::to_string)
+        });
+        let remote_host_id = remote_host.map(|host_id| host_id.to_string());
         // Manual tab color, exposed per-pane the same way as `code_review_open`
         // (color is a tab-level attribute in Warp, not per-pane). Only an
         // explicit `Color(_)` counts as configured; `Unset` (directory-default
@@ -613,6 +649,8 @@ pub(crate) fn pane_list(
             "file_path": file_path,
             "cursor_line": cursor_line,
             "cursor_column": cursor_column,
+            "remote_host_id": remote_host_id,
+            "remote_host_label": remote_host_label,
             "code_review_file_path": code_review_file_path,
             "code_review_remote_host_id": code_review_remote_host_id,
             "code_review_cursor_line": code_review_cursor_line,
