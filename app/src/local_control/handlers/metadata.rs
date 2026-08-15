@@ -22,6 +22,7 @@ use crate::features::FeatureFlag;
 use crate::local_control::LocalControlBridge;
 use crate::local_control::resolver::{reject_target_families, require_active_window_id_for_action};
 use crate::pane_group::{PaneGroup, PaneId};
+use crate::remote_server::manager::RemoteServerManager;
 use crate::settings::{AISettings, CodeSettings};
 use crate::tab::SelectedTabColor;
 use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
@@ -495,75 +496,89 @@ pub(crate) fn pane_list(
             is_active,
             has_terminal_session,
             working_directory,
+            working_directory_location,
             code_view,
             code_review_open,
             rich_input_open,
             cli_agent,
         ) = entry.pane_group.read(ctx, |pane_group, ctx| {
-                let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
-                // Working directory of the focused terminal session, if this is a terminal
-                // pane. `pwd()` is not `local_fs`-gated, so this works in the OSS build.
-                let working_directory =
-                    terminal_view.as_ref().and_then(|tv| tv.as_ref(ctx).pwd());
-                let code_view = pane_group.code_view_from_pane_id(entry.pane_id, ctx);
-                // CLI agent Rich Input visibility. Keyed by terminal view id
-                // in CLIAgentSessionsModel, so this is per-pane, unlike the
-                // tab-level code_review_open below.
-                let rich_input_open = terminal_view.as_ref().is_some_and(|tv| {
-                    CLIAgentSessionsModel::as_ref(ctx).is_input_open(tv.id())
-                });
-                // Which CLI agent, if any, is registered for this pane. None for
-                // plain terminal and Warp Agent panes, where Rich Input does not
-                // exist at all -- there rich_input_open=false means absent, not
-                // closed, and external tools must not try to open it.
-                let cli_agent = terminal_view.as_ref().and_then(|tv| {
-                    CLIAgentSessionsModel::as_ref(ctx)
-                        .session(tv.id())
-                        .map(|session| session.agent.to_serialized_name())
-                });
-                (
-                    pane_group.focused_pane_id(ctx) == entry.pane_id,
-                    terminal_view.is_some(),
-                    working_directory,
-                    code_view,
-                    // Per-tab Code Review panel visibility. The right panel is
-                    // CR-only (resource center / AI assistant use workspace-level
-                    // flags), and this flag is unconditionally set false whenever
-                    // the panel closes — unlike CodeReviewView.is_open, which can
-                    // stay true when the close path fails to find the cached view.
-                    pane_group.right_panel_open,
-                    rich_input_open,
-                    cli_agent,
-                )
+            let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
+            // Working directory of the focused terminal session, if this is a terminal
+            // pane. `pwd()` is not `local_fs`-gated, so this works in the OSS build.
+            let working_directory = terminal_view.as_ref().and_then(|tv| tv.as_ref(ctx).pwd());
+            // `pwd()` drops SSH host identity, which external tools need to address the same
+            // working directory on the correct machine.
+            let working_directory_location = terminal_view
+                .as_ref()
+                .and_then(|tv| tv.as_ref(ctx).pwd_as_local_or_remote(ctx));
+            let code_view = pane_group.code_view_from_pane_id(entry.pane_id, ctx);
+            // CLI agent Rich Input visibility. Keyed by terminal view id
+            // in CLIAgentSessionsModel, so this is per-pane, unlike the
+            // tab-level code_review_open below.
+            let rich_input_open = terminal_view
+                .as_ref()
+                .is_some_and(|tv| CLIAgentSessionsModel::as_ref(ctx).is_input_open(tv.id()));
+            // Which CLI agent, if any, is registered for this pane. None for
+            // plain terminal and Warp Agent panes, where Rich Input does not
+            // exist at all -- there rich_input_open=false means absent, not
+            // closed, and external tools must not try to open it.
+            let cli_agent = terminal_view.as_ref().and_then(|tv| {
+                CLIAgentSessionsModel::as_ref(ctx)
+                    .session(tv.id())
+                    .map(|session| session.agent.to_serialized_name())
             });
+            (
+                pane_group.focused_pane_id(ctx) == entry.pane_id,
+                terminal_view.is_some(),
+                working_directory,
+                working_directory_location,
+                code_view,
+                // Per-tab Code Review panel visibility. The right panel is
+                // CR-only (resource center / AI assistant use workspace-level
+                // flags), and this flag is unconditionally set false whenever
+                // the panel closes — unlike CodeReviewView.is_open, which can
+                // stay true when the close path fails to find the cached view.
+                pane_group.right_panel_open,
+                rich_input_open,
+                cli_agent,
+            )
+        });
         // File path + cursor position of the active tab if this is a code-editor
         // pane. Uses only non-`local_fs`-gated accessors so it works in the OSS
         // build. `cursor_line`/`cursor_column` are 0-indexed (LSP convention).
-        let (file_path, cursor_line, cursor_column) = code_view
+        let (file_path, file_remote_host, cursor_line, cursor_column) = code_view
             .map(|cv| {
                 cv.read(ctx, |cv, cx| {
-                    let file_path = cv
+                    let location = cv
                         .tab_at(cv.active_tab_index())
-                        .and_then(|tab| tab.location())
-                        .map(|location| location.display_path());
+                        .and_then(|tab| tab.location());
+                    let file_path = location.map(|location| location.display_path());
+                    // A path alone is ambiguous across local and remote filesystems, so preserve
+                    // the editor location's host identity separately.
+                    let file_remote_host = location
+                        .and_then(|location| location.as_remote())
+                        .map(|remote| remote.host_id.clone());
                     let cursor = cv.active_cursor_position(cx);
-                    (file_path, cursor.map(|c| c.0), cursor.map(|c| c.1))
+                    (
+                        file_path,
+                        file_remote_host,
+                        cursor.map(|c| c.0),
+                        cursor.map(|c| c.1),
+                    )
                 })
             })
-            .unwrap_or((None, None, None));
+            .unwrap_or((None, None, None, None));
         // Code Review lives in the right panel, not the pane group, so its diff
         // editor is never a pane here. When one of its diff editors is focused,
         // expose that file path + 0-indexed cursor position on the active pane
         // (the pane group's focused pane, since Code Review sits outside it), so
         // external tools can drive jumps just like an editor pane's cursor.
         let mut cr_cursor: Option<(LocalOrRemotePath, usize, usize)> = None;
-        if is_active {
-            if let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
-                for cr in cr_views {
-                    cr_cursor = cr.read(ctx, |cr, cx| cr.focused_editor_cursor(cx));
-                    if cr_cursor.is_some() {
-                        break;
-                    }
+        if is_active && let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
+            for cr in cr_views {
+                cr_cursor = cr.read(ctx, |cr, cx| cr.focused_editor_cursor(cx));
+                if cr_cursor.is_some() {
+                    break;
                 }
             }
         }
@@ -586,20 +601,36 @@ pub(crate) fn pane_list(
             }
             None => (None, None, None, None),
         };
+        // Editor panes take their host from the file location; terminal panes take it from the
+        // session working directory. The server generates opaque host IDs per session, so expose
+        // the manager's stable label as well rather than forcing external tools to guess.
+        let remote_host = file_remote_host.or_else(|| {
+            working_directory_location
+                .as_ref()
+                .and_then(|location| location.as_remote())
+                .map(|remote| remote.host_id.clone())
+        });
+        let remote_host_label = remote_host.as_ref().and_then(|host_id| {
+            RemoteServerManager::as_ref(ctx)
+                .host_label(host_id)
+                .map(str::to_string)
+        });
+        let remote_host_id = remote_host.map(|host_id| host_id.to_string());
         // Manual tab color, exposed per-pane the same way as `code_review_open`
         // (color is a tab-level attribute in Warp, not per-pane). Only an
         // explicit `Color(_)` counts as configured; `Unset` (directory-default
         // fallback) and `Cleared` both report unconfigured. See the workspace
         // `set_tab_color` / `tab_selected_color` pair.
-        let color = workspace_for_window(entry.window_id, ActionKind::PaneList, ctx)?
-            .and_then(|workspace| {
+        let color = workspace_for_window(entry.window_id, ActionKind::PaneList, ctx)?.and_then(
+            |workspace| {
                 workspace.read(ctx, |workspace, _| {
                     match workspace.tab_selected_color(entry.tab_index) {
                         Some(SelectedTabColor::Color(color)) => Some(color),
                         _ => None,
                     }
                 })
-            });
+            },
+        );
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
@@ -613,6 +644,8 @@ pub(crate) fn pane_list(
             "file_path": file_path,
             "cursor_line": cursor_line,
             "cursor_column": cursor_column,
+            "remote_host_id": remote_host_id,
+            "remote_host_label": remote_host_label,
             "code_review_file_path": code_review_file_path,
             "code_review_remote_host_id": code_review_remote_host_id,
             "code_review_cursor_line": code_review_cursor_line,
