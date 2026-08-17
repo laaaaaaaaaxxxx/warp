@@ -500,6 +500,7 @@ pub(crate) fn pane_list(
             code_view,
             code_review_open,
             rich_input_open,
+            ssh_destination,
             cli_agent,
         ) = entry.pane_group.read(ctx, |pane_group, ctx| {
             let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
@@ -527,6 +528,15 @@ pub(crate) fn pane_list(
                     .session(tv.id())
                     .map(|session| session.agent.to_serialized_name())
             });
+            // How this pane's session reached its host, as reported by the
+            // SSH wrapper. `remote_host_id` says which host Warp bound the
+            // session to; this says what to run to get there again, which
+            // is what split inheritance and session restoration replay.
+            let ssh_destination = terminal_view.as_ref().and_then(|tv| {
+                tv.as_ref(ctx)
+                    .ssh_session_snapshot(ctx)
+                    .map(|ssh_session| ssh_session.destination)
+            });
             (
                 pane_group.focused_pane_id(ctx) == entry.pane_id,
                 terminal_view.is_some(),
@@ -540,6 +550,7 @@ pub(crate) fn pane_list(
                 // stay true when the close path fails to find the cached view.
                 pane_group.right_panel_open,
                 rich_input_open,
+                ssh_destination,
                 cli_agent,
             )
         });
@@ -646,6 +657,7 @@ pub(crate) fn pane_list(
             "cursor_column": cursor_column,
             "remote_host_id": remote_host_id,
             "remote_host_label": remote_host_label,
+            "ssh_destination": ssh_destination,
             "code_review_file_path": code_review_file_path,
             "code_review_remote_host_id": code_review_remote_host_id,
             "code_review_cursor_line": code_review_cursor_line,
