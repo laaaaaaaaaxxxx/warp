@@ -6884,7 +6884,7 @@ impl PaneGroup {
     /// `ShellType::Zsh` is declared so Warp writes its own zsh bootstrap into
     /// the pty afterwards; those bytes travel down the channel and warpify the
     /// remote shell, which is why the launcher carries no bootstrap of its own.
-    fn ssh_attach_shell(
+    pub(crate) fn ssh_attach_shell(
         control_socket: &std::path::Path,
         destination: &str,
         working_directory: Option<&str>,
@@ -6924,6 +6924,27 @@ impl PaneGroup {
             path,
             ShellType::Zsh,
         ))
+    }
+
+    /// The live SSH connection this group holds to `destination`, if any.
+    ///
+    /// A second channel can be opened on it without authenticating again, which
+    /// is what lets a new tab start out on that host instead of dialing it.
+    pub(crate) fn ssh_control_socket_for(
+        &self,
+        destination: &str,
+        ctx: &AppContext,
+    ) -> Option<PathBuf> {
+        self.pane_contents.values().find_map(|pane| {
+            let terminal_pane = pane.as_any().downcast_ref::<TerminalPane>()?;
+            let terminal_view = terminal_pane.terminal_view(ctx);
+            let terminal_view = terminal_view.as_ref(ctx);
+            let session_id = terminal_view.active_block_session_id()?;
+            let session = terminal_view.sessions_model().as_ref(ctx).get(session_id)?;
+            (session.ssh_destination()? == destination)
+                .then(|| session.ssh_control_socket().map(std::path::Path::to_path_buf))
+                .flatten()
+        })
     }
 
     pub fn startup_path_for_new_session(

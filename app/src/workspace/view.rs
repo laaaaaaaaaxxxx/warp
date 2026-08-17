@@ -8568,6 +8568,71 @@ impl Workspace {
         });
     }
 
+    /// Opens a terminal tab whose shell starts in `directory`, on `remote_host`
+    /// when one is named.
+    ///
+    /// The remote form attaches to a connection this app already holds, so the
+    /// shell starts on the far side: nothing is typed into the pane and nothing
+    /// is authenticated a second time. With no such connection there is nothing
+    /// to attach to, and the caller is told so rather than quietly handed a
+    /// local shell pointing at a path that only exists on another machine.
+    pub(crate) fn add_terminal_tab_in_directory(
+        &mut self,
+        directory: Option<String>,
+        remote_host: Option<&str>,
+        ctx: &mut ViewContext<Self>,
+    ) -> Result<(), String> {
+        let mut options = NewTerminalOptions::default();
+        let mut attached_session_id = None;
+        match remote_host {
+            None => {
+                options = options.with_initial_directory_opt(directory.map(PathBuf::from));
+            }
+            Some(destination) => {
+                let control_socket = (0..self.tab_count())
+                    .filter_map(|index| self.get_pane_group_view(index))
+                    .find_map(|pane_group| {
+                        pane_group
+                            .as_ref(ctx)
+                            .ssh_control_socket_for(destination, ctx)
+                    })
+                    .ok_or_else(|| format!("no live session on {destination} to attach to"))?;
+                // Non-zero: the id doubles as an integrity token on the hook.
+                let session_id = warp_core::SessionId::from(rand::random::<u64>() | 1);
+                options.shell = Some(
+                    PaneGroup::ssh_attach_shell(
+                        &control_socket,
+                        destination,
+                        directory.as_deref(),
+                        session_id,
+                    )
+                    .ok_or_else(|| "could not write the attach launcher".to_owned())?,
+                );
+                attached_session_id = Some(session_id);
+            }
+        }
+        self.add_tab_with_pane_layout(
+            PanesLayout::SingleTerminal(Box::new(options)),
+            Arc::new(HashMap::new()),
+            None,
+            ctx,
+        );
+        // The pane announces the session it carries: the hook comes up the
+        // channel from the far end, and hooks for undeclared ids are dropped.
+        if let Some(session_id) = attached_session_id
+            && let Some(pane_group) = self.get_pane_group_view(self.active_tab_index())
+        {
+            let focused_pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
+            if let Some(terminal_view) = pane_group
+                .as_ref(ctx)
+                .terminal_view_from_pane_id(focused_pane_id, ctx)
+            {
+                terminal_view.as_ref(ctx).register_session_id(session_id);
+            }
+        }
+        Ok(())
+    }
+
     fn open_directory_in_new_tab(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
         let options = NewTerminalOptions::default().with_initial_directory(path);
         self.add_tab_with_pane_layout(
