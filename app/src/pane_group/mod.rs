@@ -7058,12 +7058,19 @@ impl PaneGroup {
     ) -> Option<AvailableShell> {
         let socket = control_socket.to_str()?;
         let id = session_id.as_u64();
-        let hook = format!(
-            "{{\"hook\": \"SSH\", \"value\": {{\"socket_path\": \"{socket}\", \
-             \"remote_shell\": \"zsh\", \"session_id\": {id}, \
-             \"remote_session_id\": {id}, \"external_control_master\": true, \
-             \"destination\": \"{destination}\"}}}}"
-        );
+        // Socket for the fallback connection. It is this pane's own, so unlike
+        // the attached case Warp may tear it down when the pane goes.
+        let own_socket = format!("~/.ssh/warp-attach-{id}");
+        let hook = |socket_path: &str, external: bool| {
+            format!(
+                "{{\"hook\": \"SSH\", \"value\": {{\"socket_path\": \"{socket_path}\", \
+                 \"remote_shell\": \"zsh\", \"session_id\": {id}, \
+                 \"remote_session_id\": {id}, \"external_control_master\": {external}, \
+                 \"destination\": \"{destination}\"}}}}"
+            )
+        };
+        let hook_attached = hook(socket, true);
+        let hook_dialed = hook(&own_socket, false);
         let enter_directory = working_directory
             .map(|directory| format!("cd '{directory}' 2>/dev/null; "))
             .unwrap_or_default();
@@ -7071,12 +7078,28 @@ impl PaneGroup {
         // the same reason the bootstrap wrapper does it there: it must not
         // arrive before the pane has declared the session id it carries, or it
         // is dropped as unrecognized.
+        //
+        // The probe before it is not ceremony: a connection carries at most
+        // `MaxSessions` multiplexed sessions (10 by default) and every attached
+        // pane holds one for its lifetime. Past that the server refuses new
+        // channels, so the pane dials its own connection instead of coming up
+        // dead. No `-q` anywhere -- when either route fails, the reason belongs
+        // in the pane rather than in a swallowed stderr.
+        //
+        // The probe reads from `/dev/null`, never the pane: its stdin is this
+        // pty, and Warp's bootstrap is already queued there. A probe that
+        // reads would hand those bytes to the throwaway command instead of the
+        // remote shell, leaving the pane connected but never warpified.
         let script = format!(
             "#!/bin/sh\n\
-             hook='{hook}'\n\
-             hex=$(printf '%s' \"$hook\" | od -An -v -tx1 | tr -d ' \\n')\n\
-             exec /usr/bin/ssh -q -o ControlPath='{socket}' -tt placeholder@placeholder \
-             \"printf '\\e]9278;d;%s\\x07' '$hex'; {enter_directory}exec zsh -g --no-rcs\"\n"
+             hex_attached=$(printf '%s' '{hook_attached}' | od -An -v -tx1 | tr -d ' \\n')\n\
+             hex_dialed=$(printf '%s' '{hook_dialed}' | od -An -v -tx1 | tr -d ' \\n')\n\
+             remote_attached=\"printf '\\e]9278;d;%s\\x07' '$hex_attached'; {enter_directory}exec zsh -g --no-rcs\"\n\
+             remote_dialed=\"printf '\\e]9278;d;%s\\x07' '$hex_dialed'; {enter_directory}exec zsh -g --no-rcs\"\n\
+             if /usr/bin/ssh -o ControlPath='{socket}' -o BatchMode=yes placeholder@placeholder true </dev/null 2>/dev/null; then\n\
+             \texec /usr/bin/ssh -o ControlPath='{socket}' -tt placeholder@placeholder \"$remote_attached\"\n\
+             fi\n\
+             exec /usr/bin/ssh -o ControlMaster=yes -o ControlPath='{own_socket}' -tt '{destination}' \"$remote_dialed\"\n"
         );
         let path = std::env::temp_dir().join(format!("warp-ssh-attach-{id}.sh"));
         std::fs::write(&path, script).ok()?;
