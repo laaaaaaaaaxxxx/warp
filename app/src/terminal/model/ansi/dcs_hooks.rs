@@ -324,6 +324,7 @@ impl DProtoHook {
                 "external_control_master" => {
                     value.external_control_master = v.parse::<bool>().unwrap_or(false)
                 }
+                "destination" => value.destination = v,
                 _ => {
                     log::warn!("Tried to add unknown field {key} to SSH hook");
                 }
@@ -727,6 +728,16 @@ pub struct SSHValue {
     /// `false` for hooks emitted by older bootstrap scripts.
     #[serde(default)]
     pub external_control_master: bool,
+    /// The destination arguments the user passed to `ssh`, forwarded verbatim
+    /// by the bootstrap wrapper (e.g. `minipc`, or `-p 2222 root@10.0.0.5`).
+    /// Empty when the wrapper could not safely encode them.
+    ///
+    /// This is the only record of *how* a session reached its host. The
+    /// ControlMaster socket does not survive an app restart and cannot be
+    /// handed to a second pane that has to re-authenticate, so both session
+    /// restoration and split-pane inheritance replay this instead.
+    #[serde(default)]
+    pub destination: String,
 }
 
 /// Received from the pty after the shell session has been initialized, marking

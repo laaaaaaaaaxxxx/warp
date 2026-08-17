@@ -641,6 +641,10 @@ pub struct SessionInfo {
     pub builtins: HashSet<SmolStr>,
     pub keywords: Vec<SmolStr>,
     pub is_ssh_wrapper_session: IsSSHWrapperSession,
+    /// For SSH wrapper sessions, the destination arguments that reached this
+    /// host, as reported by the `SSH` hook. `None` for local sessions and for
+    /// remote sessions whose wrapper could not encode them.
+    pub ssh_destination: Option<String>,
     pub home_dir: Option<String>,
     pub cdpath: Option<String>,
     pub editor: Option<String>,
@@ -666,12 +670,15 @@ impl SessionInfo {
         ssh_wrapper_session: Option<SSHValue>,
         active_block_session_id: Option<SessionId>,
     ) -> Self {
-        let is_ssh_wrapper_session = match ssh_wrapper_session {
-            Some(ssh_value) => IsSSHWrapperSession::Yes {
-                socket_path: ssh_value.socket_path,
-                external_control_master: ssh_value.external_control_master,
-            },
-            None => IsSSHWrapperSession::No,
+        let (is_ssh_wrapper_session, ssh_destination) = match ssh_wrapper_session {
+            Some(ssh_value) => (
+                IsSSHWrapperSession::Yes {
+                    socket_path: ssh_value.socket_path,
+                    external_control_master: ssh_value.external_control_master,
+                },
+                Some(ssh_value.destination).filter(|destination| !destination.is_empty()),
+            ),
+            None => (IsSSHWrapperSession::No, None),
         };
 
         if launch_data.is_none() && is_ssh_wrapper_session == IsSSHWrapperSession::No {
@@ -702,6 +709,7 @@ impl SessionInfo {
             session_type,
             subshell_info,
             is_ssh_wrapper_session,
+            ssh_destination,
             environment_variable_names: Default::default(),
             path: None,
             home_dir: None,
@@ -843,6 +851,7 @@ impl SessionInfo {
             cdpath: bootstrapped_value.cdpath,
             editor: bootstrapped_value.editor,
             is_ssh_wrapper_session: self.is_ssh_wrapper_session,
+            ssh_destination: self.ssh_destination,
             subshell_info: self.subshell_info.take(),
             host_info: HostInfo {
                 os_category: bootstrapped_value.os_category,
@@ -1065,6 +1074,23 @@ impl Session {
 
     pub fn is_wsl(&self) -> bool {
         self.info.wsl_name().is_some()
+    }
+
+    /// The destination arguments that reached this session's host, for SSH
+    /// wrapper sessions that reported them.
+    pub fn ssh_destination(&self) -> Option<&str> {
+        self.info.ssh_destination.as_deref()
+    }
+
+    /// The ControlMaster socket this session runs over, for SSH wrapper
+    /// sessions. A second channel can be opened on it without authenticating
+    /// again, which is how a split inherits the session rather than repeating
+    /// the connection.
+    pub fn ssh_control_socket(&self) -> Option<&std::path::Path> {
+        match &self.info.is_ssh_wrapper_session {
+            IsSSHWrapperSession::Yes { socket_path, .. } => Some(socket_path.as_path()),
+            IsSSHWrapperSession::No => None,
+        }
     }
 
     pub fn wsl_distro_name(&self) -> Option<&str> {
@@ -1759,6 +1785,7 @@ pub mod testing {
                 builtins: HashSet::new(),
                 keywords: Vec::new(),
                 is_ssh_wrapper_session: IsSSHWrapperSession::No,
+                ssh_destination: None,
                 home_dir: None,
                 cdpath: None,
                 host_info: Default::default(),

@@ -1014,6 +1014,23 @@ if [[ -z $WARP_BOOTSTRAPPED ]]; then
               esac
           fi
 
+          # Record how this session reached its host. Session restoration and
+          # split-pane inheritance both replay these arguments; the ControlMaster
+          # socket serves neither, since it dies with the app and cannot
+          # re-authenticate. Only a single-word destination is recorded: multi
+          # argument invocations cannot be embedded in the hook JSON below
+          # without quoting, and an unrecorded destination simply leaves both
+          # features inactive for that session.
+          local warp_ssh_destination=""
+          if [[ $# -eq 1 ]]; then
+              warp_ssh_destination="$1"
+              case "$warp_ssh_destination" in
+                  *[![:alnum:]._/~@:+,-]*)
+                      warp_ssh_destination=""
+                      ;;
+              esac
+          fi
+
           # Keep remote commands up-to-date with shell.rs & bash.sh.
           # Note that in this command, we're passing a string to the remote shell. Any variable expansions need to be
           # escaped with "''" to avoid the local shell from expanding them before they're passed to the remote shell.
@@ -1032,7 +1049,7 @@ export WARP_IS_SSH='1'
 test -n '$WARP_CLIENT_VERSION' && export WARP_CLIENT_VERSION='$WARP_CLIENT_VERSION'
 # Only forward the protocol version if it was set locally (i.e. the HOANotifications feature flag is on).
 test -n '$WARP_CLI_AGENT_PROTOCOL_VERSION' && export WARP_CLI_AGENT_PROTOCOL_VERSION='$WARP_CLI_AGENT_PROTOCOL_VERSION'
-hook="'$(printf "{\"hook\": \"SSH\", \"value\": {\"socket_path\": \"'$control_path'\", \"remote_shell\": \"%s\", \"session_id\": '"$WARP_SESSION_ID"', \"remote_session_id\": '"$remote_session_id"', \"external_control_master\": '"$external_control_master"'}}" "${SHELL##*/}" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
+hook="'$(printf "{\"hook\": \"SSH\", \"value\": {\"socket_path\": \"'$control_path'\", \"remote_shell\": \"%s\", \"session_id\": '"$WARP_SESSION_ID"', \"remote_session_id\": '"$remote_session_id"', \"external_control_master\": '"$external_control_master"', \"destination\": \"'$warp_ssh_destination'\"}}" "${SHELL##*/}" | command -p od -An -v -tx1 | command -p tr -d " \n")'"
 printf '$OSC_START$DCS_JSON_MARKER$OSC_PARAM_SEPARATOR%s$OSC_END' "'$hook'"
 
 if test "'"${SHELL##*/}" != "bash" -a "${SHELL##*/}" != "zsh"'"; then

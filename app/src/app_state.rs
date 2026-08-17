@@ -215,6 +215,22 @@ pub struct TerminalPaneSnapshot {
     /// The active conversation ID if the agent view was open in fullscreen mode.
     /// When `Some`, the agent view should be restored to fullscreen for this conversation.
     pub active_conversation_id: Option<AIConversationId>,
+    /// Set when this pane's session was on a remote host at snapshot time.
+    pub ssh_session: Option<SshSessionSnapshot>,
+}
+
+/// Where a pane's session was living when it was snapshotted, for panes that
+/// had reached a remote host.
+///
+/// Nothing about an SSH session survives a restart -- not the ControlMaster
+/// socket, not the remote shell -- so restoration replays the destination and
+/// re-enters the directory instead of resuming anything. `working_directory`
+/// is a path on that host and never on this machine, which is why it is kept
+/// apart from the pane's local `cwd`.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SshSessionSnapshot {
+    pub destination: String,
+    pub working_directory: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
