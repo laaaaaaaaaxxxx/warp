@@ -44,11 +44,22 @@ pub(crate) fn create_tab(
     validate_tab_create_target(target)?;
     let window_id = target_window_id_for_target(ctx, target, ActionKind::TabCreate)?;
     let workspace = workspace_for_window(window_id, ActionKind::TabCreate, ctx)?;
+    let decoded = decode_params::<TabCreateParams>(params)?;
     let action = tab_create_action(params)?;
+    let directory = decoded.directory.clone();
+    let remote_host = decoded.remote_host.clone();
     let (tab_id, previous_tab_count, tab_count, active_tab_index) =
         workspace.update(ctx, |workspace, ctx| {
             let previous_tab_count = workspace.tab_count();
-            workspace.handle_action(&action, ctx);
+            // A directory (or a host) makes this a placed tab: the shell has to
+            // start there, which the plain add-tab action cannot express.
+            if directory.is_some() || remote_host.is_some() {
+                workspace
+                    .add_terminal_tab_in_directory(directory, remote_host.as_deref(), ctx)
+                    .map_err(|message| ControlError::new(ErrorCode::InvalidParams, message))?;
+            } else {
+                workspace.handle_action(&action, ctx);
+            }
             let tab_id = workspace
                 .get_pane_group_view(workspace.active_tab_index())
                 .map(|tab| tab.id().to_string())
