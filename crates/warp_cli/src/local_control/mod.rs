@@ -617,6 +617,14 @@ pub struct TabCreateArgs {
     #[arg(long = "type", value_enum)]
     pub tab_type: Option<CliTabType>,
 
+    /// Directory the new tab starts in. Read on --remote-host when given.
+    #[arg(long = "directory")]
+    pub directory: Option<String>,
+
+    /// Attach the new tab to an existing session's host (e.g. `minipc`).
+    #[arg(long = "remote-host")]
+    pub remote_host: Option<String>,
+
     #[command(flatten)]
     pub target: TargetArgs,
 }

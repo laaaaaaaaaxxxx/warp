@@ -340,6 +340,8 @@ pub(super) fn run_window_command(
             ActionKind::WindowCreate,
             TabCreateParams {
                 tab_type: args.tab_type.map(Into::into),
+                directory: None,
+                remote_host: None,
             },
             output_format,
         ),
@@ -368,6 +370,8 @@ pub(super) fn run_tab_command(
             ActionKind::TabCreate,
             TabCreateParams {
                 tab_type: args.tab_type.map(Into::into),
+                directory: args.directory,
+                remote_host: args.remote_host,
             },
             output_format,
         ),

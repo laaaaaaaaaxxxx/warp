@@ -179,6 +179,14 @@ pub struct TabCloseParams {
 pub struct TabCreateParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tab_type: Option<TabType>,
+    /// Directory the new tab's shell should start in. Interpreted on
+    /// `remote_host` when one is named, otherwise on this machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+    /// Destination of a host this app already has a session on. The new tab
+    /// attaches to that connection instead of starting a local shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_host: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
