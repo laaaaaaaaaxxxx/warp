@@ -545,6 +545,7 @@ fn parse_dcs_ssh() {
                 session_id: Some(167303092612201),
                 remote_session_id: Some(167303092612202),
                 external_control_master: false,
+                destination: String::new(),
             }
         ),
         _ => panic!("incorrect dcs value"),
@@ -577,6 +578,7 @@ fn parse_dcs_ssh_with_external_control_master() {
                 session_id: Some(167303092612201),
                 remote_session_id: Some(167303092612202),
                 external_control_master: true,
+                destination: String::new(),
             }
         ),
         _ => panic!("incorrect dcs value"),
