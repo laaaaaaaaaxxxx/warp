@@ -821,6 +821,19 @@ pub struct NewTerminalOptions {
     pub conversation_restoration: Option<ConversationRestorationInNewPaneType>,
 }
 
+/// What a new pane needs in order to continue the session it was split from,
+/// when that session lives on a remote host.
+///
+/// `control_socket` is what separates inheriting from reconnecting: with it the
+/// pane opens a second channel on the connection that already exists, without
+/// it the destination has to be dialed again.
+#[derive(Debug, Clone)]
+struct InheritedRemoteSession {
+    destination: String,
+    working_directory: Option<String>,
+    control_socket: Option<PathBuf>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DefaultSessionModeBehavior {
     Apply,
@@ -1666,6 +1679,12 @@ impl PaneGroup {
                 let chosen_shell = terminal_snapshot
                     .shell_launch_data
                     .as_ref()
+                    // A pane that was attached to a remote session recorded a
+                    // launcher as its shell. That launcher is bound to a
+                    // ControlMaster which died with the previous run, so it must
+                    // never be replayed; the pane reconnects from
+                    // `ssh_session` instead.
+                    .filter(|_| terminal_snapshot.ssh_session.is_none())
                     .and_then(|shell| {
                         if FeatureFlag::ShellSelector.is_enabled() {
                             AvailableShells::as_ref(ctx).get_from_shell_launch_data(shell)
@@ -1735,6 +1754,20 @@ impl PaneGroup {
                 );
 
                 let terminal_view_id = terminal_view.id();
+
+                // A pane that was on a remote host comes back as a local shell:
+                // nothing about the SSH session outlived the restart. Send it
+                // back the way it arrived, rather than leaving it here holding
+                // a working directory that belongs to the other machine.
+                if let Some(ssh_session) = terminal_snapshot.ssh_session.clone() {
+                    terminal_view.update(ctx, |terminal_view, ctx| {
+                        terminal_view.follow_session_to_remote_host(
+                            &ssh_session.destination,
+                            ssh_session.working_directory,
+                            ctx,
+                        );
+                    });
+                }
 
                 let pane_data = TerminalPane::new(
                     uuid.0,
@@ -2203,6 +2236,7 @@ impl PaneGroup {
                             active_profile_id: None,
                             conversation_ids_to_restore: Vec::new(),
                             active_conversation_id: None,
+                            ssh_session: None,
                         })
                     }
                 };
@@ -6628,7 +6662,36 @@ impl PaneGroup {
                     )
             })
         });
-        self.add_session_in_directory(
+        // Only a plain split continues the session it came from. An agent pane
+        // added beside the focused one, or a forked conversation, is new work
+        // that merely starts next door -- neither belongs on the parent's host.
+        let remote_session = (base_pane_id_for_split.is_some()
+            && conversation_restoration.is_none())
+        .then(|| self.remote_session_to_inherit(base_pane_id_for_context, ctx))
+        .flatten();
+        // Inheriting means opening another channel on the connection the
+        // parent already holds: the pane starts out as that session, with
+        // nothing typed into it and nothing authenticated twice. Only when
+        // there is no live socket to attach to -- restoring after a restart --
+        // does the destination have to be dialed again.
+        let attached_session = remote_session.as_ref().and_then(|session| {
+            let control_socket = session.control_socket.as_deref()?;
+            // Non-zero: the id doubles as an integrity token on the hook, and
+            // zero is the legacy default the reader rejects.
+            let session_id = warp_core::SessionId::from(rand::random::<u64>() | 1);
+            let shell = Self::ssh_attach_shell(
+                control_socket,
+                &session.destination,
+                session.working_directory.as_deref(),
+                session_id,
+            )?;
+            Some((shell, session_id))
+        });
+        let chosen_shell = match &attached_session {
+            Some((shell, _)) => Some(shell.clone()),
+            None => chosen_shell,
+        };
+        let new_pane_id = self.add_session_in_directory(
             direction,
             base_pane_id_for_split,
             chosen_shell,
@@ -6636,7 +6699,31 @@ impl PaneGroup {
             conversation_restoration,
             default_session_mode_behavior,
             ctx,
-        )
+        );
+        if let Some(terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
+            match (&attached_session, remote_session) {
+                (Some((_, session_id)), _) => {
+                    // Nothing on this machine will announce this session: the
+                    // hook comes up the channel from the far end, and hooks for
+                    // ids the pane has not declared are dropped unread.
+                    terminal_view.as_ref(ctx).register_session_id(*session_id);
+                }
+                // No socket to attach to, so the pane has to reach the host the
+                // long way. Without this it would be a local shell holding a
+                // working directory that only exists on the other machine.
+                (None, Some(session)) => {
+                    terminal_view.update(ctx, |terminal_view, ctx| {
+                        terminal_view.follow_session_to_remote_host(
+                            &session.destination,
+                            session.working_directory,
+                            ctx,
+                        );
+                    });
+                }
+                (None, None) => {}
+            }
+        }
+        new_pane_id
     }
 
     /// Creates a new terminal session and wraps it in a `TerminalPane`.
@@ -6925,6 +7012,86 @@ impl PaneGroup {
     /// This returns the active (parent) session's current directory if the active session is local
     /// (not an SSH session) and if the active session is done bootstrapping. Else, it returns the
     /// the current session's startup directory.
+    /// The SSH destination and remote working directory a new pane should
+    /// inherit when it is split off `base_pane_id`.
+    ///
+    /// `None` when the parent session is local, or when it never reported a
+    /// destination -- those panes split locally, exactly as they did before
+    /// remote inheritance existed.
+    fn remote_session_to_inherit(
+        &self,
+        base_pane_id: Option<TerminalPaneId>,
+        ctx: &AppContext,
+    ) -> Option<InheritedRemoteSession> {
+        let terminal_view = self.terminal_view_from_pane_id(base_pane_id?, ctx)?;
+        let terminal_view = terminal_view.as_ref(ctx);
+        let session_id = terminal_view.active_block_session_id()?;
+        let session = terminal_view.sessions_model().as_ref(ctx).get(session_id)?;
+        Some(InheritedRemoteSession {
+            destination: session.ssh_destination()?.to_owned(),
+            working_directory: terminal_view.pwd(),
+            control_socket: session
+                .ssh_control_socket()
+                .map(std::path::Path::to_path_buf),
+        })
+    }
+
+    /// Builds the "shell" for a pane that should open as a second channel on
+    /// `control_socket` rather than start a local shell.
+    ///
+    /// The launcher announces the session with the same `SSH` hook the
+    /// bootstrap wrapper emits. That hook is the only thing that binds a pane
+    /// to a remote host: without it Code Review, the file tree and file search
+    /// all silently resolve against this machine instead. It then replaces
+    /// itself with the multiplexed session, so the pane *is* the remote
+    /// session from its first byte -- nothing is typed into it, and nothing is
+    /// authenticated a second time.
+    ///
+    /// `ShellType::Zsh` is declared so Warp writes its own zsh bootstrap into
+    /// the pty afterwards; those bytes travel down the channel and warpify the
+    /// remote shell, which is why the launcher carries no bootstrap of its own.
+    fn ssh_attach_shell(
+        control_socket: &std::path::Path,
+        destination: &str,
+        working_directory: Option<&str>,
+        session_id: warp_core::SessionId,
+    ) -> Option<AvailableShell> {
+        let socket = control_socket.to_str()?;
+        let id = session_id.as_u64();
+        let hook = format!(
+            "{{\"hook\": \"SSH\", \"value\": {{\"socket_path\": \"{socket}\", \
+             \"remote_shell\": \"zsh\", \"session_id\": {id}, \
+             \"remote_session_id\": {id}, \"external_control_master\": true, \
+             \"destination\": \"{destination}\"}}}}"
+        );
+        let enter_directory = working_directory
+            .map(|directory| format!("cd '{directory}' 2>/dev/null; "))
+            .unwrap_or_default();
+        // The hook is emitted from the far end, after the channel is up, for
+        // the same reason the bootstrap wrapper does it there: it must not
+        // arrive before the pane has declared the session id it carries, or it
+        // is dropped as unrecognized.
+        let script = format!(
+            "#!/bin/sh\n\
+             hook='{hook}'\n\
+             hex=$(printf '%s' \"$hook\" | od -An -v -tx1 | tr -d ' \\n')\n\
+             exec /usr/bin/ssh -q -o ControlPath='{socket}' -tt placeholder@placeholder \
+             \"printf '\\e]9278;d;%s\\x07' '$hex'; {enter_directory}exec zsh -g --no-rcs\"\n"
+        );
+        let path = std::env::temp_dir().join(format!("warp-ssh-attach-{id}.sh"));
+        std::fs::write(&path, script).ok()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).ok()?;
+        }
+        Some(AvailableShell::new_custom_shell(
+            "ssh".to_owned(),
+            path,
+            ShellType::Zsh,
+        ))
+    }
+
     pub fn startup_path_for_new_session(
         &self,
         base_pane_id: Option<TerminalPaneId>,

@@ -427,6 +427,8 @@ pub struct TerminalPane {
     pub conversation_ids: Option<String>,
     /// The active conversation ID if the agent view was open in fullscreen mode.
     pub active_conversation_id: Option<String>,
+    /// This is serialized JSON data for an SshSessionSnapshot struct.
+    pub ssh_session: Option<String>,
 }
 
 #[derive(Identifiable, Queryable, Selectable)]
@@ -605,6 +607,8 @@ pub struct NewTerminalPane {
     pub conversation_ids: Option<String>,
     /// The active conversation ID if the agent view was open in fullscreen mode.
     pub active_conversation_id: Option<String>,
+    /// This is serialized JSON data for an SshSessionSnapshot struct.
+    pub ssh_session: Option<String>,
 }
 
 #[derive(Insertable)]

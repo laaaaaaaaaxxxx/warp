@@ -2612,6 +2612,11 @@ pub struct TerminalView {
     /// Commands that should run as separate blocks after the active pending
     /// command finishes successfully.
     pending_command_queue: VecDeque<String>,
+    /// Directory to enter once a remote session bootstraps in this pane. Set
+    /// when the pane was split off a remote parent or restored from one: the
+    /// path lives on the remote host, so it can only be applied after the SSH
+    /// session reports in, never as the local shell's startup directory.
+    pending_remote_working_directory: Option<String>,
     /// When true, enter agent view after pending setup commands complete
     /// (i.e. after `PendingCommandCompleted` is emitted). Set by
     /// `pane_tree_from_template_recursive` when a tab config has both
@@ -4360,6 +4365,7 @@ impl TerminalView {
             is_login_shell_bootstrapped: false,
             awaiting_pending_command_completion: false,
             pending_command_queue: Default::default(),
+            pending_remote_working_directory: None,
             enter_agent_view_after_pending_commands: false,
             slow_bootstrap_banner,
             is_slow_bootstrap_banner_open: false,
@@ -7905,6 +7911,21 @@ impl TerminalView {
             .map(|s| s.shell().shell_type())
     }
 
+    /// The remote session this pane is sitting in: the destination that reached
+    /// it, and the directory it is in over there. `None` for local panes, and
+    /// for remote panes whose wrapper never reported a destination.
+    pub fn ssh_session_snapshot<C: ModelAsRef>(
+        &self,
+        ctx: &C,
+    ) -> Option<crate::app_state::SshSessionSnapshot> {
+        let session_id = self.active_block_session_id()?;
+        let session = self.sessions.as_ref(ctx).get(session_id)?;
+        Some(crate::app_state::SshSessionSnapshot {
+            destination: session.ssh_destination()?.to_owned(),
+            working_directory: self.pwd(),
+        })
+    }
+
     pub fn active_session_path_if_local<C: ModelAsRef>(&self, ctx: &C) -> Option<PathBuf> {
         if self.active_session_is_local(ctx) == Some(true) {
             self.active_block_metadata
@@ -9529,6 +9550,55 @@ impl TerminalView {
     ) {
         self.pending_command_queue = commands.into_iter().collect();
         self.set_next_pending_command_from_queue(ctx);
+    }
+
+    /// Sends this pane to `destination` over SSH, then enters
+    /// `working_directory` once the remote shell reports in.
+    ///
+    /// The command runs through the same shell wrapper a person typing `ssh`
+    /// would hit, so the resulting session picks up remote host identity, and
+    /// with it Code Review and the file tree, by the ordinary path.
+    /// Declares `session_id` as one this pane's model will accept hooks for.
+    ///
+    /// A pane that starts life as an SSH channel has to announce that session
+    /// itself, and unregistered ids are dropped before the hook is read.
+    pub fn register_session_id(&self, session_id: SessionId) {
+        self.model.lock().register_session_id(session_id);
+    }
+
+    pub fn follow_session_to_remote_host(
+        &mut self,
+        destination: &str,
+        working_directory: Option<String>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        log::info!(
+            "Sending pane to SSH destination {destination}, then to {working_directory:?}"
+        );
+        self.pending_remote_working_directory = working_directory;
+        self.set_pending_command_queue(vec![format!("ssh {destination}")], ctx);
+    }
+
+    /// Enters `pending_remote_working_directory` once the shell that reported
+    /// in is the remote one.
+    ///
+    /// The discriminator is the still-outstanding `ssh` block: a prompt
+    /// arriving while that block runs can only come from the shell on the
+    /// other end of it. The pane's own first prompt arrives before the block
+    /// is submitted, so it does not qualify. Session type is not usable here,
+    /// because the host handshake that sets it has no ordering guarantee
+    /// against the prompt.
+    fn enter_pending_remote_working_directory(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.pending_remote_working_directory.is_none()
+            || !self.awaiting_pending_command_completion
+        {
+            return;
+        }
+        let Some(working_directory) = self.pending_remote_working_directory.take() else {
+            return;
+        };
+        log::info!("Remote shell reported in, entering {working_directory}");
+        self.set_pending_command(&format!("cd '{working_directory}'"), ctx);
     }
 
     fn set_next_pending_command_from_queue(&mut self, ctx: &mut ViewContext<Self>) -> bool {
@@ -12243,6 +12313,12 @@ impl TerminalView {
                 // because the abort is time sensitive.
                 self.warpify_state.abort_auto_warpify();
 
+                // A prompt arriving under a running `ssh` block is the remote
+                // shell's first one. `BootstrapPrecmdDone` cannot serve here:
+                // it only fires for a pane's very first prompt, which belongs
+                // to the local shell that has not run `ssh` yet.
+                self.enter_pending_remote_working_directory(ctx);
+
                 let active_session = self
                     .active_block_session_id()
                     .and_then(|id| self.sessions.as_ref(ctx).get(id));
@@ -12345,6 +12421,10 @@ impl TerminalView {
                     && let Some(command_succeeded) = pending_command_succeeded
                 {
                     self.awaiting_pending_command_completion = false;
+                    // An `ssh` block that finishes is a remote shell that is
+                    // gone, so a directory over there is no longer somewhere
+                    // this pane can go.
+                    self.pending_remote_working_directory = None;
                     if command_succeeded && self.set_next_pending_command_from_queue(ctx) {
                         // The delayed pending-command scheduler below will
                         // submit the next queued command as a separate block.
@@ -12895,6 +12975,7 @@ impl TerminalView {
                 ctx.notify();
             }
             ModelEvent::BootstrapPrecmdDone => {
+                self.enter_pending_remote_working_directory(ctx);
                 self.execute_pending_command((), ctx);
             }
             ModelEvent::AgentTaggedInChanged {

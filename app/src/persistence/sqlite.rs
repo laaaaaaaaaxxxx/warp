@@ -1270,6 +1270,10 @@ fn save_pane_state(
                 active_conversation_id: terminal_snapshot
                     .active_conversation_id
                     .map(|id| id.to_string()),
+                ssh_session: terminal_snapshot
+                    .ssh_session
+                    .as_ref()
+                    .and_then(|ssh_session| serde_json::to_string(ssh_session).ok()),
             };
 
             diesel::insert_into(schema::terminal_panes::dsl::terminal_panes)
@@ -2232,6 +2236,9 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                     let active_conversation_id = terminal_pane
                         .active_conversation_id
                         .and_then(|id_str| AIConversationId::try_from(id_str).ok());
+                    let ssh_session = terminal_pane
+                        .ssh_session
+                        .and_then(|ssh_session| serde_json::from_str(&ssh_session).ok());
 
                     LeafContents::Terminal(TerminalPaneSnapshot {
                         uuid: terminal_pane.uuid,
@@ -2244,6 +2251,7 @@ fn read_node(conn: &mut SqliteConnection, node: model::PaneNode) -> Result<PaneN
                         active_profile_id,
                         conversation_ids_to_restore,
                         active_conversation_id,
+                        ssh_session,
                     })
                 }
                 NOTEBOOK_PANE_KIND => {
