@@ -6680,7 +6680,7 @@ impl PaneGroup {
             // zero is the legacy default the reader rejects.
             let session_id = warp_core::SessionId::from(rand::random::<u64>() | 1);
             let shell = Self::ssh_attach_shell(
-                control_socket,
+                Some(control_socket),
                 &session.destination,
                 session.working_directory.as_deref(),
                 session_id,
@@ -7051,12 +7051,12 @@ impl PaneGroup {
     /// the pty afterwards; those bytes travel down the channel and warpify the
     /// remote shell, which is why the launcher carries no bootstrap of its own.
     pub(crate) fn ssh_attach_shell(
-        control_socket: &std::path::Path,
+        control_socket: Option<&std::path::Path>,
         destination: &str,
         working_directory: Option<&str>,
         session_id: warp_core::SessionId,
     ) -> Option<AvailableShell> {
-        let socket = control_socket.to_str()?;
+        let socket = control_socket.and_then(std::path::Path::to_str);
         let id = session_id.as_u64();
         // Socket for the fallback connection. It is this pane's own, so unlike
         // the attached case Warp may tear it down when the pane goes.
@@ -7069,8 +7069,25 @@ impl PaneGroup {
                  \"destination\": \"{destination}\"}}}}"
             )
         };
-        let hook_attached = hook(socket, true);
         let hook_dialed = hook(&own_socket, false);
+        // With no connection to reuse there is nothing to probe: the pane dials
+        // its own. That is the first pane on a host, and the path a caller who
+        // names a host that is not open yet ends up on.
+        let attach_route = socket
+            .map(|socket| {
+                let hook_attached = hook(socket, true);
+                format!(
+                    "hex_attached=$(printf '%s' '{hook_attached}' | od -An -v -tx1 | tr -d ' \\n')\n\
+                     remote_attached=\"printf '\\e]9278;d;%s\\x07' '$hex_attached'; {enter_directory}exec zsh -g --no-rcs\"\n\
+                     if /usr/bin/ssh -o ControlPath='{socket}' -o BatchMode=yes placeholder@placeholder true </dev/null 2>/dev/null; then\n\
+                     \texec /usr/bin/ssh -o ControlPath='{socket}' -tt placeholder@placeholder \"$remote_attached\"\n\
+                     fi\n",
+                    enter_directory = working_directory
+                        .map(|directory| format!("cd '{directory}' 2>/dev/null; "))
+                        .unwrap_or_default(),
+                )
+            })
+            .unwrap_or_default();
         let enter_directory = working_directory
             .map(|directory| format!("cd '{directory}' 2>/dev/null; "))
             .unwrap_or_default();
@@ -7092,13 +7109,9 @@ impl PaneGroup {
         // remote shell, leaving the pane connected but never warpified.
         let script = format!(
             "#!/bin/sh\n\
-             hex_attached=$(printf '%s' '{hook_attached}' | od -An -v -tx1 | tr -d ' \\n')\n\
+             {attach_route}\
              hex_dialed=$(printf '%s' '{hook_dialed}' | od -An -v -tx1 | tr -d ' \\n')\n\
-             remote_attached=\"printf '\\e]9278;d;%s\\x07' '$hex_attached'; {enter_directory}exec zsh -g --no-rcs\"\n\
              remote_dialed=\"printf '\\e]9278;d;%s\\x07' '$hex_dialed'; {enter_directory}exec zsh -g --no-rcs\"\n\
-             if /usr/bin/ssh -o ControlPath='{socket}' -o BatchMode=yes placeholder@placeholder true </dev/null 2>/dev/null; then\n\
-             \texec /usr/bin/ssh -o ControlPath='{socket}' -tt placeholder@placeholder \"$remote_attached\"\n\
-             fi\n\
              exec /usr/bin/ssh -o ControlMaster=yes -o ControlPath='{own_socket}' -tt '{destination}' \"$remote_dialed\"\n"
         );
         let path = std::env::temp_dir().join(format!("warp-ssh-attach-{id}.sh"));

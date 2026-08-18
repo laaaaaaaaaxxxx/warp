@@ -8761,24 +8761,26 @@ impl Workspace {
                 options = options.with_initial_directory_opt(directory.map(PathBuf::from));
             }
             Some(destination) => {
+                // A connection to reuse if one is open, otherwise the tab dials
+                // its own: naming a host that is not open yet is an ordinary
+                // request, not an error.
                 let control_socket = (0..self.tab_count())
                     .filter_map(|index| self.get_pane_group_view(index))
                     .find_map(|pane_group| {
                         pane_group
                             .as_ref(ctx)
                             .ssh_control_socket_for(destination, ctx)
-                    })
-                    .ok_or_else(|| format!("no live session on {destination} to attach to"))?;
+                    });
                 // Non-zero: the id doubles as an integrity token on the hook.
                 let session_id = warp_core::SessionId::from(rand::random::<u64>() | 1);
                 options.shell = Some(
                     PaneGroup::ssh_attach_shell(
-                        &control_socket,
+                        control_socket.as_deref(),
                         destination,
                         directory.as_deref(),
                         session_id,
                     )
-                    .ok_or_else(|| "could not write the attach launcher".to_owned())?,
+                    .ok_or_else(|| "could not write the launcher".to_owned())?,
                 );
                 attached_session_id = Some(session_id);
             }
