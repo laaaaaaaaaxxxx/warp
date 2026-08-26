@@ -290,6 +290,8 @@ pub struct FileTreeView {
     pending_focus_target: Option<PendingFocusTarget>,
     /// Whether to show hidden files (dotfiles) in the file tree.
     show_hidden_files: bool,
+    /// Extra entry names hidden alongside dotfiles.
+    extra_hidden_names: Vec<String>,
 }
 
 /// Directory the file tree wants to focus once its entry becomes available.
@@ -353,6 +355,8 @@ impl FileTreeView {
             self.subscribe_to_active_file_model(ctx);
             self.subscribe_to_code_settings(ctx);
             self.show_hidden_files = *CodeSettings::as_ref(ctx).show_hidden_files;
+            self.extra_hidden_names =
+                CodeSettings::as_ref(ctx).file_tree_hidden_names.clone();
 
             // Catch up on any repository/file changes that happened while inactive.
             // Skip remote-backed roots — their data comes from server pushes,
@@ -667,6 +671,12 @@ impl FileTreeView {
                 me.rebuild_flattened_items();
                 ctx.notify();
             }
+            if let CodeSettingsChangedEvent::FileTreeHiddenNames { .. } = event {
+                me.extra_hidden_names =
+                    CodeSettings::as_ref(ctx).file_tree_hidden_names.clone();
+                me.rebuild_flattened_items();
+                ctx.notify();
+            }
         });
     }
 
@@ -736,6 +746,7 @@ impl FileTreeView {
             registered_lazy_loaded_paths: HashSet::new(),
             pending_focus_target: None,
             show_hidden_files: *CodeSettings::as_ref(ctx).show_hidden_files,
+            extra_hidden_names: CodeSettings::as_ref(ctx).file_tree_hidden_names.clone(),
         }
     }
 
@@ -1718,6 +1729,15 @@ impl FileTreeView {
 
         if path_of_removed_item == Some(current_path) {
             return (None, true);
+        }
+
+        // Extra non-dotfile names, gated by the same master switch.
+        if !self.show_hidden_files
+            && depth > 0
+            && let Some(name) = current_path.file_name()
+            && self.extra_hidden_names.iter().any(|n| n == name)
+        {
+            return (selected_item_index, removed_item);
         }
 
         // Filter hidden files/directories when show_hidden_files is disabled.
