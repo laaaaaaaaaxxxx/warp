@@ -76,6 +76,17 @@ define_settings_group!(CodeSettings, settings: [
         toml_path: "code.editor.show_hidden_files",
         description: "Whether hidden files (dotfiles) are shown in the project explorer.",
     },
+    // Additional project-explorer entry names hidden alongside dotfiles.
+    file_tree_hidden_names: FileTreeHiddenNames {
+        type: Vec<String>,
+        default: vec![],
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Globally(RespectUserSyncSetting::Yes),
+        surface: settings::SettingSurfaces::GUI,
+        private: false,
+        toml_path: "code.editor.file_tree_hidden_names",
+        description: "Additional entry names hidden in the project explorer.",
+    },
     // Controls whether the language server reformats the file on save.
     format_on_save: FormatOnSave {
         type: bool,
