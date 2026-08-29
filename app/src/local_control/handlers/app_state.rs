@@ -120,6 +120,7 @@ pub(crate) fn handle(
         ActionKind::InputReplace => input_text(instance_id, action, params, target, true, ctx),
         ActionKind::InputOpen => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputSubmit => input_text(instance_id, action, params, target, false, ctx),
+        ActionKind::InputGet => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::SurfaceSettingsOpen => surface_settings_open(instance_id, params, target, ctx),
         ActionKind::SurfaceCommandPaletteOpen => surface_palette_open(
             instance_id,
@@ -661,6 +662,17 @@ fn input_text(
             terminal_view.submit_cli_agent_rich_input(text, ctx);
         });
         return Ok(ack(instance_id, action_kind));
+    }
+    if matches!(action_kind, ActionKind::InputGet) {
+        let text = terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view
+                .input()
+                .update(ctx, |input, ctx| input.buffer_text(ctx))
+        });
+        return Ok(json!({
+            "action": action_kind.as_str(),
+            "text": text,
+        }));
     }
     let text = text_param(params)?;
     validate_staged_input_text(action_kind, &text)?;

@@ -64,6 +64,7 @@ pub enum ActionResultSpec {
     AppearanceState,
     CapabilityList,
     CapabilityMetadata,
+    InputText,
     InstanceList,
     InstanceMetadata,
     KeybindingList,
@@ -231,6 +232,7 @@ define_action_catalog! {
         InputReplace => { name: "input.replace", status: Implemented, target: Input, params: Text, result: Acknowledgement },
         InputOpen => { name: "input.open", status: Implemented, target: Input, params: None, result: Acknowledgement },
         InputSubmit => { name: "input.submit", status: Implemented, target: Input, params: Text, result: Acknowledgement },
+        InputGet => { name: "input.get", status: Implemented, target: Input, params: None, result: InputText },
     }
 
     theme {
