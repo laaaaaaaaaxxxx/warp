@@ -664,14 +664,21 @@ fn input_text(
         return Ok(ack(instance_id, action_kind));
     }
     if matches!(action_kind, ActionKind::InputGet) {
-        let text = terminal_view.update(ctx, |terminal_view, ctx| {
-            terminal_view
-                .input()
-                .update(ctx, |input, ctx| input.buffer_text(ctx))
+        let (text, cursor) = terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view.input().update(ctx, |input, ctx| {
+                (
+                    input.buffer_text(ctx),
+                    // None <=> not a single collapsed cursor, i.e. something is selected.
+                    // External callers need this to tell "nothing selected" from "a range is selected";
+                    // the text alone cannot answer it.
+                    input.editor().as_ref(ctx).single_cursor_to_point(ctx),
+                )
+            })
         });
         return Ok(json!({
             "action": action_kind.as_str(),
             "text": text,
+            "cursor": cursor.map(|point| json!({ "line": point.row, "column": point.column })),
         }));
     }
     let text = text_param(params)?;
