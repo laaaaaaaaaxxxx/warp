@@ -386,6 +386,9 @@ pub enum InputCommand {
 
     /// Submit text through an open CLI agent rich input without changing UI focus.
     Submit(TextTargetArgs),
+
+    /// Read the current input buffer without changing it.
+    Get(TargetArgs),
 }
 
 #[derive(Debug, Clone, Subcommand)]
