@@ -3,8 +3,8 @@
 #[path = "metadata_tests.rs"]
 mod tests;
 use ::local_control::protocol::{
-    ActionNameParams, ActiveTargetChain, PaneTarget, SessionTarget, SurfaceListResult,
-    SurfaceSummary, TabTarget, TargetSelector, WindowTarget,
+    ActionNameParams, ActiveTargetChain, PaneTarget, SelectionRangesParams, SessionTarget,
+    SurfaceListResult, SurfaceSummary, TabTarget, TargetSelector, WindowTarget,
 };
 use ::local_control::{
     Action, ActionKind, ActionMetadata, ControlError, ErrorCode, InstanceId, PROTOCOL_VERSION,
@@ -480,6 +480,21 @@ pub(crate) fn tab_inspect(
     }))
 }
 
+/// Serializes 0-indexed LSP selection ranges for the `selections` field.
+fn lsp_ranges_json(ranges: &[(usize, usize, usize, usize)]) -> Vec<serde_json::Value> {
+    ranges
+        .iter()
+        .map(|(start_line, start_column, end_line, end_column)| {
+            json!({
+                "start_line": start_line,
+                "start_column": start_column,
+                "end_line": end_line,
+                "end_column": end_column,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn pane_list(
     target: &TargetSelector,
     ctx: &mut ModelContext<LocalControlBridge>,
@@ -502,6 +517,8 @@ pub(crate) fn pane_list(
             rich_input_open,
             ssh_destination,
             cli_agent,
+            terminal_selection,
+            input_selection,
         ) = entry.pane_group.read(ctx, |pane_group, ctx| {
             let terminal_view = pane_group.terminal_view_from_pane_id(entry.pane_id, ctx);
             // Working directory of the focused terminal session, if this is a terminal
@@ -537,6 +554,18 @@ pub(crate) fn pane_list(
                     .ssh_session_snapshot(ctx)
                     .map(|ssh_session| ssh_session.destination)
             });
+            // Selected text, split by carrier. Deliberately not
+            // `selected_text_from_focused_pane`: that helper answers only for the
+            // focused pane, returns no carrier identity, and prefers the input
+            // editor's selection over the terminal view's -- external tools need
+            // exactly the distinction it collapses. Read per pane, so split panes
+            // each report their own selection.
+            let terminal_selection = terminal_view
+                .as_ref()
+                .and_then(|tv| tv.as_ref(ctx).selected_text(ctx));
+            let input_selection = terminal_view
+                .as_ref()
+                .and_then(|tv| tv.as_ref(ctx).selected_text_from_input(ctx));
             (
                 pane_group.focused_pane_id(ctx) == entry.pane_id,
                 terminal_view.is_some(),
@@ -552,12 +581,14 @@ pub(crate) fn pane_list(
                 rich_input_open,
                 ssh_destination,
                 cli_agent,
+                terminal_selection,
+                input_selection,
             )
         });
         // File path + cursor position of the active tab if this is a code-editor
         // pane. Uses only non-`local_fs`-gated accessors so it works in the OSS
         // build. `cursor_line`/`cursor_column` are 0-indexed (LSP convention).
-        let (file_path, file_remote_host, cursor_line, cursor_column) = code_view
+        let (file_path, file_remote_host, cursor_line, cursor_column, editor_selection) = code_view
             .map(|cv| {
                 cv.read(ctx, |cv, cx| {
                     let location = cv
@@ -570,15 +601,22 @@ pub(crate) fn pane_list(
                         .and_then(|location| location.as_remote())
                         .map(|remote| remote.host_id.clone());
                     let cursor = cv.active_cursor_position(cx);
+                    // Editor selection rides the same read as file path and cursor:
+                    // one pass, one active-tab decision, no chance of the two
+                    // disagreeing about which tab they describe.
+                    let editor_selection = cv
+                        .selected_text(cx)
+                        .map(|text| (text, cv.active_selection_ranges(cx)));
                     (
                         file_path,
                         file_remote_host,
                         cursor.map(|c| c.0),
                         cursor.map(|c| c.1),
+                        editor_selection,
                     )
                 })
             })
-            .unwrap_or((None, None, None, None));
+            .unwrap_or((None, None, None, None, None));
         // Code Review lives in the right panel, not the pane group, so its diff
         // editor is never a pane here. When one of its diff editors is focused,
         // expose that file path + 0-indexed cursor position on the active pane
@@ -589,6 +627,19 @@ pub(crate) fn pane_list(
             for cr in cr_views {
                 cr_cursor = cr.read(ctx, |cr, cx| cr.focused_editor_cursor(cx));
                 if cr_cursor.is_some() {
+                    break;
+                }
+            }
+        }
+        let mut cr_selection: Option<(
+            LocalOrRemotePath,
+            String,
+            Vec<(usize, usize, usize, usize)>,
+        )> = None;
+        if is_active && let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
+            for cr in cr_views {
+                cr_selection = cr.read(ctx, |cr, cx| cr.focused_editor_selection(cx));
+                if cr_selection.is_some() {
                     break;
                 }
             }
@@ -642,6 +693,39 @@ pub(crate) fn pane_list(
                 })
             },
         );
+        // One entry per carrier that currently holds a selection, because a single
+        // pane can hold two at once -- the terminal view and the Rich Input editor
+        // are independent selection sites. Upstream's focused-pane helper collapses
+        // that by always preferring the input editor; here the caller picks by
+        // carrier instead of guessing which one is newer. Empty array means nothing
+        // is selected anywhere in this pane. Terminal and input carriers have no
+        // ranges: a terminal has no file line numbers to report.
+        let mut selections: Vec<serde_json::Value> = Vec::new();
+        if let Some(text) = terminal_selection {
+            selections.push(json!({ "carrier": "terminal", "text": text }));
+        }
+        if let Some(text) = input_selection {
+            selections.push(json!({ "carrier": "input", "text": text }));
+        }
+        if let Some((text, ranges)) = editor_selection {
+            selections.push(json!({
+                "carrier": "editor",
+                "text": text,
+                "file_path": file_path.clone(),
+                "ranges": lsp_ranges_json(&ranges),
+            }));
+        }
+        if let Some((location, text, ranges)) = cr_selection {
+            selections.push(json!({
+                "carrier": "code_review",
+                "text": text,
+                "file_path": location.display_path(),
+                "remote_host_id": location
+                    .as_remote()
+                    .map(|remote| remote.host_id.to_string()),
+                "ranges": lsp_ranges_json(&ranges),
+            }));
+        }
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
@@ -667,11 +751,184 @@ pub(crate) fn pane_list(
             "cli_agent": cli_agent,
             "color_configured": color.is_some(),
             "color": color,
+            "selections": selections,
         }));
     }
     Ok(json!({
         "action": ActionKind::PaneList.as_str(),
         "panes": panes,
+    }))
+}
+
+/// Clears the selections `pane inspect` would have reported for the targeted
+/// pane, and names the carriers it actually cleared.
+///
+/// Discovery reuses `select_pane_entries` and defaults to the active pane, so
+/// this clears exactly what the read reports -- read and clear can never
+/// disagree about which pane or which carriers they mean. There is deliberately
+/// no carrier parameter: letting callers address a carrier separately would
+/// reopen that gap.
+pub(crate) fn selection_clear(
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    reject_target_families(
+        ActionKind::SelectionClear,
+        target.session.is_some(),
+        "session selectors",
+    )?;
+    let target = TargetSelector {
+        window: target.window.clone(),
+        tab: target.tab.clone(),
+        pane: target.pane.clone().or(Some(PaneTarget::Active)),
+        session: None,
+    };
+    let entries = select_pane_entries(&target, ActionKind::SelectionClear, ctx)?;
+    let mut cleared: Vec<serde_json::Value> = Vec::new();
+    for entry in entries {
+        let pane_id = entry.pane_id.to_string();
+        let terminal_view = entry.pane_group.read(ctx, |pane_group, ctx| {
+            pane_group.terminal_view_from_pane_id(entry.pane_id, ctx)
+        });
+        // 输入框那格故意不清:clear 收的是用完的上下文选中,而输入框里的是人正在写的
+        // 底稿,从来不是上下文。要设它走 selection.set,那是调用方点名的动作。
+        if let Some(terminal_view) = terminal_view
+            && terminal_view.update(ctx, |terminal_view, ctx| {
+                terminal_view.clear_selections_for_control(ctx)
+            })
+        {
+            cleared.push(json!({ "pane_id": pane_id, "carrier": "terminal" }));
+        }
+        let code_view = entry.pane_group.read(ctx, |pane_group, ctx| {
+            pane_group.code_view_from_pane_id(entry.pane_id, ctx)
+        });
+        if let Some(code_view) = code_view
+            && code_view.update(ctx, |code_view, ctx| {
+                code_view.clear_active_tab_selections(ctx)
+            })
+        {
+            cleared.push(json!({ "pane_id": pane_id, "carrier": "editor" }));
+        }
+        // Code Review sits outside the pane group, so it is reachable only from
+        // the focused pane -- the same condition the read side applies.
+        let is_active = entry.pane_group.read(ctx, |pane_group, ctx| {
+            pane_group.focused_pane_id(ctx) == entry.pane_id
+        });
+        if is_active && let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
+            for cr in cr_views {
+                if cr.update(ctx, |cr, cx| cr.clear_focused_editor_selection(cx)) {
+                    cleared.push(json!({ "pane_id": pane_id, "carrier": "code_review" }));
+                    break;
+                }
+            }
+        }
+    }
+    Ok(json!({
+        "action": ActionKind::SelectionClear.as_str(),
+        "cleared": cleared,
+    }))
+}
+
+/// Sets the selection in the targeted pane's editor, or in the focused Code
+/// Review diff editor, from 0-indexed LSP ranges.
+///
+/// The inverse of the `selections` read: a range read out of one editor can be
+/// handed straight back to another. This is what lets a round trip carry the
+/// selection instead of collapsing it to a caret.
+///
+/// Terminal and Rich Input carriers are not settable and never will be from
+/// here: a terminal has no file line numbers to address, so there is no
+/// coordinate space for a caller to name a range in. That is a boundary, not a
+/// deferral.
+pub(crate) fn selection_set(
+    target: &TargetSelector,
+    params: &serde_json::Value,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    reject_target_families(
+        ActionKind::SelectionSet,
+        target.session.is_some(),
+        "session selectors",
+    )?;
+    let parsed: SelectionRangesParams = serde_json::from_value(params.clone()).map_err(|_| {
+        ControlError::new(
+            ErrorCode::InvalidParams,
+            format!(
+                "{} received parameters with the wrong shape",
+                ActionKind::SelectionSet.as_str()
+            ),
+        )
+    })?;
+    let ranges: Vec<(usize, usize, usize, usize)> = parsed
+        .ranges
+        .iter()
+        .map(|r| (r.start_line, r.start_column, r.end_line, r.end_column))
+        .collect();
+    if ranges.is_empty() {
+        return Err(ControlError::new(
+            ErrorCode::InvalidParams,
+            format!(
+                "{} requires at least one range",
+                ActionKind::SelectionSet.as_str()
+            ),
+        ));
+    }
+    let target = TargetSelector {
+        window: target.window.clone(),
+        tab: target.tab.clone(),
+        pane: target.pane.clone().or(Some(PaneTarget::Active)),
+        session: None,
+    };
+    let entries = select_pane_entries(&target, ActionKind::SelectionSet, ctx)?;
+    let mut applied: Vec<serde_json::Value> = Vec::new();
+    for entry in entries {
+        let pane_id = entry.pane_id.to_string();
+        // Code Review first, matching the read side's carrier order: when a diff
+        // editor holds focus it is what the caller is looking at.
+        let is_active = entry.pane_group.read(ctx, |pane_group, ctx| {
+            pane_group.focused_pane_id(ctx) == entry.pane_id
+        });
+        let mut done = false;
+        if is_active && let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
+            for cr in cr_views {
+                if cr.update(ctx, |cr, cx| {
+                    cr.set_focused_editor_selection_ranges(&ranges, cx)
+                }) {
+                    applied.push(json!({ "pane_id": pane_id, "carrier": "code_review" }));
+                    done = true;
+                    break;
+                }
+            }
+        }
+        if done {
+            continue;
+        }
+        let code_view = entry.pane_group.read(ctx, |pane_group, ctx| {
+            pane_group.code_view_from_pane_id(entry.pane_id, ctx)
+        });
+        if let Some(code_view) = code_view
+            && code_view.update(ctx, |code_view, ctx| {
+                code_view.set_active_tab_selection_ranges(&ranges, ctx)
+            })
+        {
+            applied.push(json!({ "pane_id": pane_id, "carrier": "editor" }));
+            continue;
+        }
+        // 终端 pane 落到它的 Rich Input:终端正文本身没有文件行号可指,不可设。
+        let terminal_view = entry.pane_group.read(ctx, |pane_group, ctx| {
+            pane_group.terminal_view_from_pane_id(entry.pane_id, ctx)
+        });
+        if let Some(terminal_view) = terminal_view
+            && terminal_view.update(ctx, |terminal_view, ctx| {
+                terminal_view.set_input_selection_points(&ranges, ctx)
+            })
+        {
+            applied.push(json!({ "pane_id": pane_id, "carrier": "input" }));
+        }
+    }
+    Ok(json!({
+        "action": ActionKind::SelectionSet.as_str(),
+        "set": applied,
     }))
 }
 

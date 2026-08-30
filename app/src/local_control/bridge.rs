@@ -149,6 +149,10 @@ impl LocalControlBridge {
             }
             ActionKind::PaneList => metadata::pane_list(&request.target, ctx),
             ActionKind::PaneInspect => metadata::pane_inspect(&request.target, ctx),
+            ActionKind::SelectionClear => metadata::selection_clear(&request.target, ctx),
+            ActionKind::SelectionSet => {
+                metadata::selection_set(&request.target, &request.action.params, ctx)
+            }
             ActionKind::PaneRename => metadata_config::pane_rename(
                 &self.instance_id,
                 &request.target,

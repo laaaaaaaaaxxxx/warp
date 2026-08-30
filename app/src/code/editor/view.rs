@@ -1714,6 +1714,86 @@ impl CodeEditorView {
         self.offset_to_lsp_position(selection.head, ctx)
     }
 
+    /// Returns this editor's selection ranges as 0-indexed LSP positions
+    /// `(start_line, start_column, end_line, end_column)`, in document order.
+    /// Collapsed selections are dropped -- a caret is not a selection.
+    ///
+    /// Mirrors `cursor_lsp_position`'s access chain and reuses
+    /// `offset_to_lsp_position` (not `local_fs`-gated), so warpctrl can expose
+    /// selection ranges in the OSS build. Head/tail are ordered here because
+    /// either end can hold the cursor; external tools get start <= end and never
+    /// have to infer direction.
+    pub fn selection_lsp_ranges(&self, ctx: &AppContext) -> Vec<(usize, usize, usize, usize)> {
+        self.model
+            .as_ref(ctx)
+            .selections(ctx)
+            .iter()
+            .filter(|selection| selection.head != selection.tail)
+            .map(|selection| {
+                let (first, last) = if selection.head <= selection.tail {
+                    (selection.head, selection.tail)
+                } else {
+                    (selection.tail, selection.head)
+                };
+                let start = self.offset_to_lsp_position(first, ctx);
+                let end = self.offset_to_lsp_position(last, ctx);
+                (start.line, start.column, end.line, end.column)
+            })
+            .collect()
+    }
+
+    /// Selects the given 0-indexed LSP ranges, replacing whatever was selected.
+    /// Inverse of `selection_lsp_ranges`, reusing the existing
+    /// `lsp_location_to_offset` so both directions share one line/column model.
+    /// Focus is untouched.
+    pub fn set_selection_lsp_ranges(
+        &mut self,
+        ranges: &[(usize, usize, usize, usize)],
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        // tail = range start, head = range end, so the caret lands at the end of
+        // the selection the way a forward drag leaves it.
+        let offsets: Vec<warp_editor::content::buffer::SelectionOffsets> = ranges
+            .iter()
+            .map(|(start_line, start_column, end_line, end_column)| {
+                let tail = self.lsp_location_to_offset(
+                    &lsp::types::Location {
+                        line: *start_line,
+                        column: *start_column,
+                    },
+                    ctx,
+                );
+                let head = self.lsp_location_to_offset(
+                    &lsp::types::Location {
+                        line: *end_line,
+                        column: *end_column,
+                    },
+                    ctx,
+                );
+                warp_editor::content::buffer::SelectionOffsets { head, tail }
+            })
+            .collect();
+        let Ok(selections) = Vec1::try_from_vec(offsets) else {
+            return false;
+        };
+        self.model.update(ctx, |model, ctx| {
+            model.vim_set_selections(
+                selections,
+                warp_editor::content::buffer::AutoScrollBehavior::Selection,
+                ctx,
+            );
+        });
+        true
+    }
+
+    /// Drops every selection in this editor, leaving the caret where the last
+    /// one's head was. Focus is untouched -- an externally driven clear must not
+    /// move the caret between views.
+    pub fn clear_selections(&mut self, ctx: &mut ViewContext<Self>) {
+        self.model
+            .update(ctx, |model, ctx| model.clear_selections(ctx));
+    }
+
     /// Returns the buffer offset at the current cursor head.
     pub fn cursor_head_offset(&self, ctx: &AppContext) -> CharOffset {
         self.model.as_ref(ctx).selections(ctx).first().head

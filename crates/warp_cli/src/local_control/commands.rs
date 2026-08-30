@@ -4,8 +4,8 @@ use local_control::protocol::{
     Action, ActionKind, ActionNameParams, BindingNameParams, BooleanValueParams, ColorValueParams,
     ControlError, DirectionParams, EmptyParams, ErrorCode, FileOpenParams, KeyParams,
     KeyValueParams, PageQueryParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
-    SettingListParams, TabActivateParams, TabActivationMode, TabCloseMode, TabCloseParams,
-    TabCreateParams, TextParams, ThemeNameParams,
+    SelectionRange, SelectionRangesParams, SettingListParams, TabActivateParams, TabActivationMode,
+    TabCloseMode, TabCloseParams, TabCreateParams, TextParams, ThemeNameParams,
 };
 use local_control::selection::select_instance;
 use serde::Serialize;
@@ -16,10 +16,11 @@ use crate::local_control::output::{write_json, write_json_line};
 use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
     ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, FileCommand,
-    InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SessionCommand, SettingCommand,
-    SurfaceCommand, SurfaceOpenCommand, SurfaceOpenToggleCommand, SurfaceQueryCommand,
-    SurfaceSettingsCommand, SurfaceToggleCommand, TabActivateArgs, TabCloseArgs, TabColorCommand,
-    TabCommand, TargetArgs, ThemeCommand, WindowCommand,
+    InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
+    SelectionSetArgs, SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand,
+    SurfaceOpenToggleCommand, SurfaceQueryCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
+    TabActivateArgs, TabCloseArgs, TabColorCommand, TabCommand, TargetArgs, ThemeCommand,
+    WindowCommand,
 };
 
 pub(super) fn run_surface_command(
@@ -551,6 +552,57 @@ pub(super) fn run_input_command(
         ),
         InputCommand::Get(args) => run_action(args, ActionKind::InputGet, output_format),
     }
+}
+
+pub(super) fn run_selection_command(
+    command: SelectionCommand,
+    output_format: OutputFormat,
+) -> Result<(), ControlError> {
+    match command {
+        SelectionCommand::Clear(args) => {
+            run_action(args, ActionKind::SelectionClear, output_format)
+        }
+        SelectionCommand::Set(args) => {
+            let mut ranges = Vec::with_capacity(args.ranges.len());
+            for raw in &args.ranges {
+                ranges.push(parse_selection_range(raw)?);
+            }
+            run_action_with_params(
+                args.target,
+                ActionKind::SelectionSet,
+                SelectionRangesParams { ranges },
+                output_format,
+            )
+        }
+    }
+}
+
+/// Parses `start_line:start_column-end_line:end_column` into a wire range.
+/// Malformed input is rejected outright rather than guessed at -- a silently
+/// wrong range would select the wrong lines with nothing to see.
+fn parse_selection_range(raw: &str) -> Result<SelectionRange, ControlError> {
+    let bad = || {
+        ControlError::new(
+            ErrorCode::InvalidParams,
+            format!("--range expects start_line:start_column-end_line:end_column, got `{raw}`"),
+        )
+    };
+    let (start, end) = raw.split_once('-').ok_or_else(bad)?;
+    let point = |part: &str| -> Result<(usize, usize), ControlError> {
+        let (line, column) = part.split_once(':').ok_or_else(bad)?;
+        Ok((
+            line.trim().parse().map_err(|_| bad())?,
+            column.trim().parse().map_err(|_| bad())?,
+        ))
+    };
+    let (start_line, start_column) = point(start)?;
+    let (end_line, end_column) = point(end)?;
+    Ok(SelectionRange {
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+    })
 }
 
 pub(super) fn run_theme_command(

@@ -48,6 +48,7 @@ pub enum ActionParameterSpec {
     Query,
     Rename,
     Resize,
+    SelectionRanges,
     TabActivate,
     TabClose,
     TabCreate,
@@ -69,6 +70,7 @@ pub enum ActionResultSpec {
     InstanceMetadata,
     KeybindingList,
     KeybindingMetadata,
+    SelectionState,
     SettingList,
     SettingValue,
     SurfaceList,
@@ -233,6 +235,11 @@ define_action_catalog! {
         InputOpen => { name: "input.open", status: Implemented, target: Input, params: None, result: Acknowledgement },
         InputSubmit => { name: "input.submit", status: Implemented, target: Input, params: Text, result: Acknowledgement },
         InputGet => { name: "input.get", status: Implemented, target: Input, params: None, result: InputText },
+    }
+
+    selection {
+        SelectionClear => { name: "selection.clear", status: Implemented, target: Pane, params: None, result: SelectionState },
+        SelectionSet => { name: "selection.set", status: Implemented, target: Pane, params: SelectionRanges, result: SelectionState },
     }
 
     theme {

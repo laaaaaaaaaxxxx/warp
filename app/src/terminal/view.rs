@@ -9572,9 +9572,7 @@ impl TerminalView {
         working_directory: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
-        log::info!(
-            "Sending pane to SSH destination {destination}, then to {working_directory:?}"
-        );
+        log::info!("Sending pane to SSH destination {destination}, then to {working_directory:?}");
         self.pending_remote_working_directory = working_directory;
         self.set_pending_command_queue(vec![format!("ssh {destination}")], ctx);
     }
@@ -20509,6 +20507,78 @@ impl TerminalView {
         self.clear_selected_text(ctx);
         self.focus_input_box(ctx);
         ctx.notify();
+    }
+
+    /// Clears this pane's terminal-body and Rich Input selections for warpctrl's
+    /// `selection.clear`, reporting which carriers actually had one.
+    ///
+    /// Focus is deliberately untouched, unlike the keyboard paths below: an
+    /// external clear must not move the caret. The AI-mode / AgentView guards
+    /// those paths carry are also absent -- they exist to keep an incidental
+    /// clear from dropping selections that are about to become agent context,
+    /// while this clear is the caller's explicit request.
+    pub fn clear_selections_for_control(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        let had_terminal = self.selected_text(ctx).is_some();
+        if had_terminal {
+            self.clear_selected_blocks(ctx);
+            self.clear_selected_text(ctx);
+            ctx.notify();
+        }
+        had_terminal
+    }
+
+    /// Selects the given 0-indexed `(line, column)` ranges in this pane's Rich
+    /// Input editor, for warpctrl's `selection.set`. Focus is untouched.
+    ///
+    /// Coordinates match what `input.get` reports: line is a logical line and
+    /// column counts characters, not bytes. Returns false when there is nothing
+    /// to select.
+    pub fn set_input_selection_points(
+        &mut self,
+        ranges: &[(usize, usize, usize, usize)],
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        if ranges.is_empty() {
+            return false;
+        }
+        // 行列 → 字节偏移:编辑器只公开按字节的选区设置口(select_ranges 是 cfg(test))。
+        // 行列口径与 input.get 一致——列按字符计,故此处逐字符累加 UTF-8 长度,不能拿列当字节。
+        let text = self.input.as_ref(ctx).buffer_text(ctx);
+        let mut line_starts = vec![0usize];
+        for (i, b) in text.bytes().enumerate() {
+            if b == b'\n' {
+                line_starts.push(i + 1);
+            }
+        }
+        let offset_of = |line: usize, column: usize| -> Option<usize> {
+            let start = *line_starts.get(line)?;
+            let rest = text.get(start..)?;
+            let line_text = rest.split('\n').next().unwrap_or("");
+            let mut off = start;
+            for ch in line_text.chars().take(column) {
+                off += ch.len_utf8();
+            }
+            Some(off)
+        };
+        let mut byte_ranges = Vec::with_capacity(ranges.len());
+        for (start_line, start_column, end_line, end_column) in ranges {
+            let (Some(a), Some(b)) = (
+                offset_of(*start_line, *start_column),
+                offset_of(*end_line, *end_column),
+            ) else {
+                continue;
+            };
+            byte_ranges
+                .push(string_offset::ByteOffset::from(a)..string_offset::ByteOffset::from(b));
+        }
+        if byte_ranges.is_empty() {
+            return false;
+        }
+        let editor = self.input.as_ref(ctx).editor().clone();
+        editor.update(ctx, |editor, ctx| {
+            editor.select_ranges_by_byte_offset(byte_ranges, ctx)
+        });
+        true
     }
 
     #[cfg_attr(not(windows), allow(dead_code))]
