@@ -653,12 +653,12 @@ impl TerminalView {
         &mut self,
         text: String,
         ctx: &mut ViewContext<Self>,
-    ) {
+    ) -> bool {
         if !self.has_active_cli_agent_input_session(ctx) {
-            return;
+            return false;
         }
         if text.trim().is_empty() {
-            return;
+            return false;
         }
 
         let prompt_length = text.chars().count();
@@ -730,6 +730,7 @@ impl TerminalView {
         } else {
             self.paste_images_then_submit_text(images, text_bytes, strategy, ctx);
         }
+        true
     }
 
     /// Submits `text` as a prompt to the active CLI agent on this terminal by

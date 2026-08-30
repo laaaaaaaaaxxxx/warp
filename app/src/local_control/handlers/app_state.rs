@@ -658,8 +658,19 @@ fn input_text(
     }
     if matches!(action_kind, ActionKind::InputSubmit) {
         let text = text_param(params)?;
+        if text.trim().is_empty() {
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                format!("{} requires non-empty text", action_kind.as_str()),
+            ));
+        }
         terminal_view.update(ctx, |terminal_view, ctx| {
-            terminal_view.submit_cli_agent_rich_input(text, ctx);
+            // 富输入没接住(纯终端 / 该 pane 无 agent session)→ 交给终端自己跑。
+            // execute_command_or_set_pending 现在跑不了就排队,由 BlockCompleted /
+            // BootstrapPrecmdDone 触发,故调用方不必等 shell 就绪。
+            if !terminal_view.submit_cli_agent_rich_input(text.clone(), ctx) {
+                terminal_view.execute_command_or_set_pending(&text, ctx);
+            }
         });
         return Ok(ack(instance_id, action_kind));
     }
