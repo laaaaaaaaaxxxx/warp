@@ -658,6 +658,53 @@ impl CodeView {
         })
     }
 
+    /// Returns the active tab's selection ranges as 0-indexed LSP positions.
+    /// Known boundary: only the active tab is read, matching `selected_text` and
+    /// `active_cursor_position` -- selections in this pane's other open tabs are
+    /// not reported.
+    pub fn active_selection_ranges(&self, ctx: &AppContext) -> Vec<(usize, usize, usize, usize)> {
+        self.tab_at(self.active_tab_index)
+            .map(|tab| {
+                let editor = tab.editor_view.as_ref(ctx).editor();
+                editor.as_ref(ctx).selection_lsp_ranges(ctx)
+            })
+            .unwrap_or_default()
+    }
+
+    /// Selects the given 0-indexed LSP ranges in the active tab editor.
+    /// Same active-tab boundary as `selected_text` and `active_selection_ranges`.
+    pub fn set_active_tab_selection_ranges(
+        &mut self,
+        ranges: &[(usize, usize, usize, usize)],
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(editor) = self
+            .tab_at(self.active_tab_index)
+            .map(|tab| tab.editor_view.as_ref(ctx).editor().clone())
+        else {
+            return false;
+        };
+        editor.update(ctx, |editor, ctx| {
+            editor.set_selection_lsp_ranges(ranges, ctx)
+        })
+    }
+
+    /// Clears the active tab editor's selections, returning whether there was one
+    /// to clear. Same active-tab boundary as `selected_text`.
+    pub fn clear_active_tab_selections(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        let Some(editor) = self
+            .tab_at(self.active_tab_index)
+            .map(|tab| tab.editor_view.as_ref(ctx).editor().clone())
+        else {
+            return false;
+        };
+        let had_selection = editor.as_ref(ctx).selected_text(ctx).is_some();
+        if had_selection {
+            editor.update(ctx, |editor, ctx| editor.clear_selections(ctx));
+        }
+        had_selection
+    }
+
     pub fn local_path(&self, ctx: &AppContext) -> Option<PathBuf> {
         self.tab_at(self.active_tab_index).and_then(|t| {
             t.editor_view.as_ref(ctx).file_id().and_then(|file_id| {
