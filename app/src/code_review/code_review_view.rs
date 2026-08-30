@@ -713,6 +713,95 @@ impl CodeReviewView {
         None
     }
 
+    /// If a diff editor in this Code Review is currently keyboard-focused and
+    /// holds a selection, returns its `(file_location, text, ranges)` where
+    /// ranges are 0-indexed LSP positions. Same access chain and same focus
+    /// filter as `focused_editor_cursor`; returns `None` when no diff editor is
+    /// focused or the focused one has no selection.
+    pub fn focused_editor_selection(
+        &self,
+        ctx: &AppContext,
+    ) -> Option<(LocalOrRemotePath, String, Vec<(usize, usize, usize, usize)>)> {
+        let focused = ctx.focused_view_id(self.window_id)?;
+        let CodeReviewViewState::Loaded(state) = self.state() else {
+            return None;
+        };
+        let repo_path = self.repo_path()?;
+        for file_state in state.file_states.values() {
+            let Some(editor_state) = file_state.editor_state.as_ref() else {
+                continue;
+            };
+            let code_editor = editor_state.editor().as_ref(ctx).editor().clone();
+            if code_editor.id() != focused {
+                continue;
+            }
+            let text = code_editor.as_ref(ctx).selected_text(ctx)?;
+            let ranges = code_editor.as_ref(ctx).selection_lsp_ranges(ctx);
+            let file_path = repo_path.join(&file_state.file_diff.file_path);
+            return Some((file_path, text, ranges));
+        }
+        None
+    }
+
+    /// Selects the given 0-indexed LSP ranges in the focused diff editor.
+    /// Same focus filter as `focused_editor_selection`.
+    pub fn set_focused_editor_selection_ranges(
+        &mut self,
+        ranges: &[(usize, usize, usize, usize)],
+        ctx: &mut ViewContext<Self>,
+    ) -> bool {
+        let Some(focused) = ctx.focused_view_id(self.window_id) else {
+            return false;
+        };
+        let CodeReviewViewState::Loaded(state) = self.state() else {
+            return false;
+        };
+        let editors: Vec<_> = state
+            .file_states
+            .values()
+            .filter_map(|file_state| file_state.editor_state.as_ref())
+            .map(|editor_state| editor_state.editor().as_ref(ctx).editor().clone())
+            .collect();
+        for code_editor in editors {
+            if code_editor.id() != focused {
+                continue;
+            }
+            return code_editor.update(ctx, |editor, ctx| {
+                editor.set_selection_lsp_ranges(ranges, ctx)
+            });
+        }
+        false
+    }
+
+    /// Clears the focused diff editor's selections, returning whether there was
+    /// one to clear. Same focus filter as `focused_editor_selection`, so read and
+    /// clear can never disagree about which editor they mean.
+    pub fn clear_focused_editor_selection(&mut self, ctx: &mut ViewContext<Self>) -> bool {
+        let Some(focused) = ctx.focused_view_id(self.window_id) else {
+            return false;
+        };
+        let CodeReviewViewState::Loaded(state) = self.state() else {
+            return false;
+        };
+        let editors: Vec<_> = state
+            .file_states
+            .values()
+            .filter_map(|file_state| file_state.editor_state.as_ref())
+            .map(|editor_state| editor_state.editor().as_ref(ctx).editor().clone())
+            .collect();
+        for code_editor in editors {
+            if code_editor.id() != focused {
+                continue;
+            }
+            if code_editor.as_ref(ctx).selected_text(ctx).is_none() {
+                return false;
+            }
+            code_editor.update(ctx, |editor, ctx| editor.clear_selections(ctx));
+            return true;
+        }
+        false
+    }
+
     pub(crate) fn repo_is_local(&self) -> Option<bool> {
         self.repo_path().map(LocalOrRemotePath::is_local)
     }

@@ -11,8 +11,8 @@ use clap_complete::aot::Shell;
 use commands::{
     run_action_catalog_command, run_app_command, run_appearance_command, run_capability_command,
     run_file_command, run_input_command, run_instance_command, run_keybinding_command,
-    run_pane_command, run_session_command, run_setting_command, run_surface_command,
-    run_tab_command, run_theme_command, run_window_command,
+    run_pane_command, run_selection_command, run_session_command, run_setting_command,
+    run_surface_command, run_tab_command, run_theme_command, run_window_command,
 };
 use completions::generate_completions_to_stdout;
 use output::write_control_error;
@@ -167,6 +167,10 @@ pub enum ControlCommand {
     /// Inspect terminal input state.
     #[command(subcommand)]
     Input(InputCommand),
+
+    /// Inspect and clear text selections.
+    #[command(subcommand)]
+    Selection(SelectionCommand),
 
     /// Inspect Warp themes.
     #[command(subcommand)]
@@ -389,6 +393,27 @@ pub enum InputCommand {
 
     /// Read the current input buffer without changing it.
     Get(TargetArgs),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum SelectionCommand {
+    /// Clear the target pane's selections without changing UI focus.
+    Clear(TargetArgs),
+
+    /// Select ranges in the target pane's editor, or in the focused Code Review
+    /// diff editor. Terminal and Rich Input carriers are not settable.
+    Set(SelectionSetArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct SelectionSetArgs {
+    /// Range as `start_line:start_column-end_line:end_column`, 0-indexed and in
+    /// document order. Repeat the flag to select several ranges at once.
+    #[arg(long = "range", required = true)]
+    pub ranges: Vec<String>,
+
+    #[command(flatten)]
+    pub target: TargetArgs,
 }
 
 #[derive(Debug, Clone, Subcommand)]
@@ -949,6 +974,7 @@ fn run_inner(args: ControlArgs) -> Result<(), local_control::protocol::ControlEr
         ControlCommand::Pane(command) => run_pane_command(command, output_format),
         ControlCommand::Session(command) => run_session_command(command, output_format),
         ControlCommand::Input(command) => run_input_command(command, output_format),
+        ControlCommand::Selection(command) => run_selection_command(command, output_format),
         ControlCommand::Theme(command) => run_theme_command(command, output_format),
         ControlCommand::Appearance(command) => run_appearance_command(command, output_format),
         ControlCommand::Setting(command) => run_setting_command(command, output_format),

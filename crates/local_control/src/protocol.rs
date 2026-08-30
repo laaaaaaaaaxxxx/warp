@@ -189,6 +189,24 @@ pub struct TabCreateParams {
     pub remote_host: Option<String>,
 }
 
+/// One selection range in 0-indexed LSP positions, `start <= end` in document
+/// order. The same shape `pane inspect` reports back under `selections`, so a
+/// range read from one editor can be handed straight to another.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectionRange {
+    pub start_line: usize,
+    pub start_column: usize,
+    pub end_line: usize,
+    pub end_column: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SelectionRangesParams {
+    pub ranges: Vec<SelectionRange>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TextParams {
