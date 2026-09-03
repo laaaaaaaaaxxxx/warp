@@ -429,6 +429,7 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             vec!["warpctrl", "input", "replace", "hello"],
         ),
         (ActionKind::InputOpen, vec!["warpctrl", "input", "open"]),
+        (ActionKind::InputClose, vec!["warpctrl", "input", "close"]),
         (ActionKind::InputGet, vec!["warpctrl", "input", "get"]),
         (
             ActionKind::InputSubmit,
@@ -656,6 +657,7 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             InputCommand::Insert(_) => Some(ActionKind::InputInsert),
             InputCommand::Replace(_) => Some(ActionKind::InputReplace),
             InputCommand::Open(_) => Some(ActionKind::InputOpen),
+            InputCommand::Close(_) => Some(ActionKind::InputClose),
             InputCommand::Submit(_) => Some(ActionKind::InputSubmit),
             InputCommand::Get(_) => Some(ActionKind::InputGet),
         },

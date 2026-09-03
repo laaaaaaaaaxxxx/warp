@@ -584,7 +584,7 @@ impl TerminalView {
         self.close_cli_agent_rich_input_impl(true, reason, ctx);
     }
 
-    pub(in crate::terminal) fn close_cli_agent_rich_input_and_disable_auto_toggle(
+    pub(crate) fn close_cli_agent_rich_input_and_disable_auto_toggle(
         &mut self,
         ctx: &mut ViewContext<Self>,
     ) {

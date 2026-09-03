@@ -544,6 +544,7 @@ pub(super) fn run_input_command(
             output_format,
         ),
         InputCommand::Open(args) => run_action(args, ActionKind::InputOpen, output_format),
+        InputCommand::Close(args) => run_action(args, ActionKind::InputClose, output_format),
         InputCommand::Submit(args) => run_action_with_params(
             args.target,
             ActionKind::InputSubmit,
