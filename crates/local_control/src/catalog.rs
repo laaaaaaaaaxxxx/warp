@@ -233,6 +233,7 @@ define_action_catalog! {
         InputInsert => { name: "input.insert", status: Implemented, target: Input, params: Text, result: Acknowledgement },
         InputReplace => { name: "input.replace", status: Implemented, target: Input, params: Text, result: Acknowledgement },
         InputOpen => { name: "input.open", status: Implemented, target: Input, params: None, result: Acknowledgement },
+        InputClose => { name: "input.close", status: Implemented, target: Input, params: None, result: Acknowledgement },
         InputSubmit => { name: "input.submit", status: Implemented, target: Input, params: Text, result: Acknowledgement },
         InputGet => { name: "input.get", status: Implemented, target: Input, params: None, result: InputText },
     }
