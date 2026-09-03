@@ -388,6 +388,9 @@ pub enum InputCommand {
     /// Open the CLI agent rich input without changing UI focus.
     Open(TargetArgs),
 
+    /// Close the CLI agent rich input without changing UI focus.
+    Close(TargetArgs),
+
     /// Submit text through an open CLI agent rich input without changing UI focus.
     Submit(TextTargetArgs),
 

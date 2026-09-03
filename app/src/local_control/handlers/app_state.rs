@@ -119,6 +119,7 @@ pub(crate) fn handle(
         ActionKind::InputInsert => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputReplace => input_text(instance_id, action, params, target, true, ctx),
         ActionKind::InputOpen => input_text(instance_id, action, params, target, false, ctx),
+        ActionKind::InputClose => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputSubmit => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputGet => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::SurfaceSettingsOpen => surface_settings_open(instance_id, params, target, ctx),
@@ -653,6 +654,12 @@ fn input_text(
     if matches!(action_kind, ActionKind::InputOpen) {
         terminal_view.update(ctx, |terminal_view, ctx| {
             terminal_view.open_cli_agent_rich_input(CLIAgentInputEntrypoint::LocalControl, ctx);
+        });
+        return Ok(ack(instance_id, action_kind));
+    }
+    if matches!(action_kind, ActionKind::InputClose) {
+        terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view.close_cli_agent_rich_input_and_disable_auto_toggle(ctx);
         });
         return Ok(ack(instance_id, action_kind));
     }

@@ -101,6 +101,7 @@ impl LocalControlBridge {
             | ActionKind::InputInsert
             | ActionKind::InputReplace
             | ActionKind::InputOpen
+            | ActionKind::InputClose
             | ActionKind::InputSubmit
             | ActionKind::InputGet
             | ActionKind::SurfaceSettingsOpen
