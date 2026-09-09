@@ -392,6 +392,22 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             ActionKind::PaneUnmaximize,
             vec!["warpctrl", "pane", "unmaximize"],
         ),
+        (
+            ActionKind::TabGroupCreate,
+            vec!["warpctrl", "tab", "group", "create"],
+        ),
+        (
+            ActionKind::TabGroupRename,
+            vec!["warpctrl", "tab", "group", "rename", "build"],
+        ),
+        (
+            ActionKind::TabGroupClose,
+            vec!["warpctrl", "tab", "group", "close"],
+        ),
+        (
+            ActionKind::TabGroupCloseAbove,
+            vec!["warpctrl", "tab", "group", "close-above"],
+        ),
         (ActionKind::PaneClose, vec!["warpctrl", "pane", "close"]),
         (
             ActionKind::SelectionClear,
@@ -637,6 +653,12 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             TabCommand::Color(command) => match command {
                 TabColorCommand::Set(_) => Some(ActionKind::TabColorSet),
                 TabColorCommand::Clear(_) => Some(ActionKind::TabColorClear),
+            },
+            TabCommand::Group(command) => match command {
+                TabGroupCommand::Create(_) => Some(ActionKind::TabGroupCreate),
+                TabGroupCommand::Rename(_) => Some(ActionKind::TabGroupRename),
+                TabGroupCommand::Close(_) => Some(ActionKind::TabGroupClose),
+                TabGroupCommand::CloseAbove(_) => Some(ActionKind::TabGroupCloseAbove),
             },
         },
         ControlCommand::Pane(command) => match command {

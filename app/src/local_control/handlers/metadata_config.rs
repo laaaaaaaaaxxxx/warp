@@ -9,7 +9,7 @@ use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
 use serde_json::json;
 use settings::Setting as _;
 use warp_core::ui::theme::AnsiColorIdentifier;
-use warpui::{ModelContext, SingletonEntity as _, WindowId};
+use warpui::{ModelContext, SingletonEntity as _, TypedActionView as _, WindowId};
 
 use super::metadata::{
     PaneEntry, TabEntry, WindowEntry, pane_entries_for_tabs, tab_entries_for_windows,
@@ -24,6 +24,8 @@ use crate::local_control::resolver::{require_active_window_id_for_action, worksp
 use crate::pane_group::PaneId;
 use crate::settings::{AccessibilitySettings, FontSettings, InputSettings, ThemeSettings};
 use crate::tab::SelectedTabColor;
+use crate::workspace::WorkspaceAction;
+use crate::workspace::tab_group::TabGroupId;
 use crate::themes::theme::{SelectedSystemThemes, ThemeKind};
 use crate::user_config::WarpConfig;
 use crate::window_settings::ZoomLevel;
@@ -206,6 +208,127 @@ pub(crate) fn setting_toggle(
         "action": ActionKind::SettingToggle.as_str(),
         "setting": setting_summary_for_key(&key, ctx)?,
     }))
+}
+
+/// Resolves the tab group the targeted tab belongs to.
+///
+/// Groups are addressed through a member tab rather than a selector of their
+/// own: a `TabGroupId` is a Uuid minted in memory and minted afresh on restart,
+/// so it is an identity to read back, never a coordinate to type. Every group
+/// holds at least one tab, so a member always reaches it.
+fn tab_group_id_for_entry(
+    entry: &TabEntry,
+    action: ActionKind,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<TabGroupId, ControlError> {
+    let workspace = workspace_for_window(entry.window_id, action, ctx)?;
+    let tab_pane_group_id = entry.pane_group.id();
+    let group_id = workspace.read(ctx, |workspace, _| {
+        workspace
+            .tabs
+            .iter()
+            .find(|tab| tab.pane_group.id() == tab_pane_group_id)
+            .and_then(|tab| tab.group_id)
+    });
+    group_id.ok_or_else(|| {
+        ControlError::new(
+            ErrorCode::MissingTarget,
+            format!(
+                "{} requires a tab that belongs to a tab group",
+                action.as_str()
+            ),
+        )
+    })
+}
+
+/// Puts the targeted tab into a new group and reports the group it landed in.
+///
+/// The id is read back off the tab rather than minted here, because the action
+/// also moves the tab -- new groups are placed below pinned items -- so its
+/// index afterwards is not the index that went in.
+pub(crate) fn tab_group_create(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupCreate, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupCreate, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(&WorkspaceAction::NewTabGroupFromTab(entry.index), ctx);
+        // Creating a group ends by deferring `RenameTabGroup`, which opens an
+        // inline editor over the group header seeded with "New Group". That is
+        // right for a mouse, wrong for a caller with no keyboard: the editor
+        // hides the header and, whenever it later commits, writes its own
+        // buffer over whatever name was set. Cancel it the same deferred way so
+        // the cancel lands after the open.
+        workspace.handle_action(&WorkspaceAction::CancelActiveRename, ctx);
+    });
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupCreate, ctx)?;
+    let mut response = tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupCreate,
+        entry.pane_group.id().to_string(),
+        entry.window_id,
+    );
+    response["group"] = json!({ "id": group_id.0.to_string() });
+    Ok(response)
+}
+
+/// Renames the group the targeted tab belongs to.
+pub(crate) fn tab_group_rename(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    action: &::local_control::Action,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let title = rename_title(action)?;
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupRename, ctx)?;
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupRename, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupRename, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        // An inline rename editor left open over this group would overwrite the
+        // name the moment it commits, so close it before writing.
+        workspace.handle_action(&WorkspaceAction::CancelActiveRename, ctx);
+        workspace.set_tab_group_name(group_id, title, ctx);
+    });
+    Ok(tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupRename,
+        entry.pane_group.id().to_string(),
+        entry.window_id,
+    ))
+}
+
+/// Closes every tab in the group the targeted tab belongs to, the target
+/// included.
+pub(crate) fn tab_group_close(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupClose, ctx)?;
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupClose, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupClose, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(&WorkspaceAction::CloseTabGroup(group_id), ctx);
+    });
+    Ok(ack(instance_id, ActionKind::TabGroupClose))
+}
+
+/// Closes every tab above the group the targeted tab belongs to. The group
+/// itself and everything below it stay.
+pub(crate) fn tab_group_close_above(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupCloseAbove, ctx)?;
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupCloseAbove, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupCloseAbove, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(&WorkspaceAction::CloseTabsAboveGroup(group_id), ctx);
+    });
+    Ok(ack(instance_id, ActionKind::TabGroupCloseAbove))
 }
 
 fn rename_title(action: &::local_control::Action) -> Result<String, ControlError> {

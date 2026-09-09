@@ -18,6 +18,7 @@ use crate::local_control::{
     ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, FileCommand,
     InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
     SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand,
+    TabGroupCommand,
     SurfaceOpenToggleCommand, SurfaceQueryCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
     TabActivateArgs, TabCloseArgs, TabColorCommand, TabCommand, TargetArgs, ThemeCommand,
     WindowCommand,
@@ -409,6 +410,23 @@ pub(super) fn run_tab_command(
             output_format,
         ),
         TabCommand::ResetName(args) => run_action(args, ActionKind::TabResetName, output_format),
+        TabCommand::Group(command) => match command {
+            TabGroupCommand::Create(args) => {
+                run_action(args, ActionKind::TabGroupCreate, output_format)
+            }
+            TabGroupCommand::Rename(args) => run_action_with_params(
+                args.target,
+                ActionKind::TabGroupRename,
+                RenameParams { title: args.title },
+                output_format,
+            ),
+            TabGroupCommand::Close(args) => {
+                run_action(args, ActionKind::TabGroupClose, output_format)
+            }
+            TabGroupCommand::CloseAbove(args) => {
+                run_action(args, ActionKind::TabGroupCloseAbove, output_format)
+            }
+        },
         TabCommand::Color(command) => match command {
             TabColorCommand::Set(args) => run_action_with_params(
                 args.target,

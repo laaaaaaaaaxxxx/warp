@@ -306,6 +306,27 @@ pub enum TabCommand {
     /// Set or clear a tab color.
     #[command(subcommand)]
     Color(TabColorCommand),
+
+    /// Manage tab groups.
+    #[command(subcommand)]
+    Group(TabGroupCommand),
+}
+
+/// Commands that manage tab groups. A group is named through any tab that
+/// belongs to it, because its own id is minted afresh on every restart.
+#[derive(Debug, Clone, Subcommand)]
+pub enum TabGroupCommand {
+    /// Put the target tab into a new tab group.
+    Create(TargetArgs),
+
+    /// Rename the group the target tab belongs to.
+    Rename(RenameArgs),
+
+    /// Close every tab in the group the target tab belongs to.
+    Close(TargetArgs),
+
+    /// Close every tab above the group the target tab belongs to.
+    CloseAbove(TargetArgs),
 }
 
 /// Commands that control tab colors.

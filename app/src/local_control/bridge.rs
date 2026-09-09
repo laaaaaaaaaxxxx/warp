@@ -148,6 +148,21 @@ impl LocalControlBridge {
             ActionKind::TabColorClear => {
                 metadata_config::tab_color_clear(&self.instance_id, &request.target, ctx)
             }
+            ActionKind::TabGroupCreate => {
+                metadata_config::tab_group_create(&self.instance_id, &request.target, ctx)
+            }
+            ActionKind::TabGroupRename => metadata_config::tab_group_rename(
+                &self.instance_id,
+                &request.target,
+                &request.action,
+                ctx,
+            ),
+            ActionKind::TabGroupClose => {
+                metadata_config::tab_group_close(&self.instance_id, &request.target, ctx)
+            }
+            ActionKind::TabGroupCloseAbove => {
+                metadata_config::tab_group_close_above(&self.instance_id, &request.target, ctx)
+            }
             ActionKind::PaneList => metadata::pane_list(&request.target, ctx),
             ActionKind::PaneInspect => metadata::pane_inspect(&request.target, ctx),
             ActionKind::SelectionClear => metadata::selection_clear(&request.target, ctx),
