@@ -459,7 +459,8 @@ pub(super) fn run_pane_command(
             ResizeParams {
                 direction: args.direction.map(Into::into),
                 amount: args.amount,
-                width: args.width,
+                axis: args.axis.map(Into::into),
+                size: args.size,
             },
             output_format,
         ),

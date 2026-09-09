@@ -7,7 +7,7 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use ::local_control::protocol::{
-    Direction as ControlDirection, DirectionParams, FileOpenParams, PageQueryParams, QueryParams,
+    Axis as ControlAxis, Direction as ControlDirection, DirectionParams, FileOpenParams, PageQueryParams, QueryParams,
     ResizeParams, TabActivateParams, TabActivationMode, TabCreateParams, TabTarget, TabType,
     TargetSelector, TextParams,
 };
@@ -40,7 +40,7 @@ use crate::local_control::resolver::{
     target_pane_id, target_session_pane_id, target_window_id_for_target, target_workspace,
 };
 use crate::palette::PaletteMode;
-use crate::pane_group::{ActivationReason, Direction, PaneGroupAction};
+use crate::pane_group::{ActivationReason, Direction, PaneGroupAction, SplitDirection};
 use crate::server::telemetry::PaletteSource;
 use crate::settings_view::SettingsSection;
 use crate::terminal::cli_agent_sessions::CLIAgentInputEntrypoint;
@@ -487,7 +487,16 @@ fn pane_split(
 ) -> Result<serde_json::Value, ControlError> {
     let action_kind = ActionKind::PaneSplit;
     let direction = pane_direction(direction_param(params)?)?;
-    let pane_group = active_target_pane_group(action_kind, target, ctx)?;
+    // The target tab is deliberately not activated, so a split into a background
+    // tab leaves the person on the tab they were already looking at.
+    //
+    // The pane inside that tab still has to be focused first: `Add` takes no
+    // pane id and always splits its group's focused pane, so this is the only
+    // way `--pane` is honored at all. Focusing inside a background group is
+    // invisible -- it changes that group's own focused pane, not which tab is
+    // on screen.
+    reject_target_families(action_kind, target.session.is_some(), "session selectors")?;
+    let pane_group = target_pane_group(action_kind, target, ctx)?;
     focus_explicit_pane_target(action_kind, target, &pane_group, ctx)?;
     let panes_before = pane_group.read(ctx, |pane_group, _| pane_group.visible_pane_ids());
     pane_group.update(ctx, |pane_group, ctx| {
@@ -542,22 +551,33 @@ fn pane_resize(
     let ResizeParams {
         direction,
         amount,
-        width,
+        axis,
+        size,
     } = decode_params(params)?;
-    if let Some(width) = width {
-        // Absolute path: the pane named by the target is set to `width`, so no
-        // direction is involved and focus is left where it is.
-        let pane_group = active_target_pane_group(ActionKind::PaneResize, target, ctx)?;
+    if let (Some(axis), Some(size)) = (axis, size) {
+        // Absolute path: the pane named by the target is set to `size` along
+        // `axis`, so no direction is involved. Resolved the way `pane.close`
+        // resolves, which neither activates the tab nor moves focus.
+        reject_target_families(
+            ActionKind::PaneResize,
+            target.session.is_some(),
+            "session selectors",
+        )?;
+        let axis = match axis {
+            ControlAxis::Horizontal => SplitDirection::Horizontal,
+            ControlAxis::Vertical => SplitDirection::Vertical,
+        };
+        let pane_group = target_pane_group(ActionKind::PaneResize, target, ctx)?;
         let pane_id = target_pane_id(ActionKind::PaneResize, target, &pane_group, ctx)?;
         pane_group.update(ctx, |pane_group, ctx| {
-            pane_group.set_pane_width(pane_id, width, ctx);
+            pane_group.set_pane_size(pane_id, axis, size, ctx);
         });
         return Ok(ack(instance_id, ActionKind::PaneResize));
     }
     let direction = direction.ok_or_else(|| {
         ControlError::new(
             ErrorCode::InvalidParams,
-            "pane.resize requires either direction or width",
+            "pane.resize requires either direction, or axis with size",
         )
     })?;
     let amount = amount.unwrap_or(1);

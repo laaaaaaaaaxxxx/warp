@@ -722,16 +722,20 @@ pub struct PaneResizeArgs {
     #[command(flatten)]
     pub target: TargetArgs,
 
-    #[arg(long = "direction", value_enum, required_unless_present = "width")]
+    #[arg(long = "direction", value_enum, required_unless_present = "axis")]
     pub direction: Option<CliCardinalDirection>,
 
     #[arg(long = "amount")]
     pub amount: Option<u32>,
 
-    /// Absolute width in points for the targeted pane; the pane sharing its
-    /// divider absorbs the remainder. Ignores --direction.
-    #[arg(long = "width")]
-    pub width: Option<f32>,
+    /// Axis the absolute --size is measured along. Ignores --direction.
+    #[arg(long = "axis", value_enum, requires = "size")]
+    pub axis: Option<CliAxis>,
+
+    /// Absolute size in points along --axis for the targeted pane; the pane
+    /// sharing its divider absorbs the remainder.
+    #[arg(long = "size", requires = "axis")]
+    pub size: Option<f32>,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -895,6 +899,21 @@ impl From<CliCardinalDirection> for local_control::protocol::Direction {
             CliCardinalDirection::Right => Self::Right,
             CliCardinalDirection::Up => Self::Up,
             CliCardinalDirection::Down => Self::Down,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CliAxis {
+    Horizontal,
+    Vertical,
+}
+
+impl From<CliAxis> for local_control::protocol::Axis {
+    fn from(value: CliAxis) -> Self {
+        match value {
+            CliAxis::Horizontal => Self::Horizontal,
+            CliAxis::Vertical => Self::Vertical,
         }
     }
 }
