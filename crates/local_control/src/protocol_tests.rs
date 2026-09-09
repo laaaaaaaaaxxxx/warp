@@ -27,6 +27,8 @@ fn strict_params_serialize_without_synthetic_discriminators() {
         ActionKind::TabCreate,
         TabCreateParams {
             tab_type: Some(TabType::Agent),
+            directory: None,
+            remote_host: None,
         },
     )
     .expect("tab.create params serialize");
@@ -141,7 +143,6 @@ fn malformed_and_removed_action_names_are_not_deserialized() {
         "block.output",
         "history.list",
         "file.list",
-        "input.get",
         "input.clear",
         "input.mode.set",
         "input.run",
