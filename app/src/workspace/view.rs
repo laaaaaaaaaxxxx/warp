@@ -7324,6 +7324,24 @@ impl Workspace {
         }
     }
 
+    /// Sets a tab group's name without going through the inline editor.
+    ///
+    /// `rename_tab_group` opens an editor over the group header, which a
+    /// control-plane caller has no way to type into. This performs the same
+    /// commit step `finish_tab_group_rename` runs once that editor closes.
+    pub fn set_tab_group_name(
+        &mut self,
+        group_id: TabGroupId,
+        name: String,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        if let Some(group) = self.tab_groups.get_mut(&group_id) {
+            group.name = Some(name);
+            ctx.dispatch_global_action("workspace:save_app", ());
+            ctx.notify();
+        }
+    }
+
     /// Ensures the group is expanded (not collapsed). No-op if the group does
     /// not exist or is already expanded.
     fn expand_tab_group(&mut self, group_id: TabGroupId, ctx: &mut ViewContext<Self>) {

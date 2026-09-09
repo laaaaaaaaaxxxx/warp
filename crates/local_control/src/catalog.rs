@@ -204,6 +204,10 @@ define_action_catalog! {
         TabResetName => { name: "tab.reset_name", status: Implemented, target: Tab, params: None, result: Acknowledgement },
         TabColorSet => { name: "tab.color.set", status: Implemented, target: Tab, params: ColorValue, result: Acknowledgement },
         TabColorClear => { name: "tab.color.clear", status: Implemented, target: Tab, params: None, result: Acknowledgement },
+        TabGroupCreate => { name: "tab.group.create", status: Implemented, target: Tab, params: None, result: Acknowledgement },
+        TabGroupRename => { name: "tab.group.rename", status: Implemented, target: Tab, params: Rename, result: Acknowledgement },
+        TabGroupClose => { name: "tab.group.close", status: Implemented, target: Tab, params: None, result: Acknowledgement },
+        TabGroupCloseAbove => { name: "tab.group.close_above", status: Implemented, target: Tab, params: None, result: Acknowledgement },
     }
 
     pane {

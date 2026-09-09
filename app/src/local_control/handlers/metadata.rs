@@ -443,18 +443,21 @@ pub(crate) fn tab_list(
         "pane or session selectors",
     )?;
     let entries = select_tab_entries(target, ActionKind::TabList, ctx)?;
-    let tabs = entries
-        .into_iter()
-        .map(|entry| {
-            json!({
-                "tab_id": entry.pane_group.id().to_string(),
-                "window_id": entry.window_id.to_string(),
-                "window_index": entry.window_index as u32,
-                "index": entry.index as u32,
-                "is_active": entry.index == entry.workspace_active_tab_index,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut tabs = Vec::new();
+    for entry in entries {
+        let (group_id, group_name, group_collapsed) =
+            tab_group_fields(&entry, ActionKind::TabList, ctx)?;
+        tabs.push(json!({
+            "tab_id": entry.pane_group.id().to_string(),
+            "window_id": entry.window_id.to_string(),
+            "window_index": entry.window_index as u32,
+            "index": entry.index as u32,
+            "is_active": entry.index == entry.workspace_active_tab_index,
+            "group_id": group_id,
+            "group_name": group_name,
+            "group_collapsed": group_collapsed,
+        }));
+    }
     Ok(json!({
         "action": ActionKind::TabList.as_str(),
         "tabs": tabs,
@@ -481,6 +484,39 @@ pub(crate) fn tab_inspect(
     Ok(json!({
         "action": ActionKind::TabInspect.as_str(),
         "tab": tab,
+    }))
+}
+
+/// Group identity for one tab: the opaque group id plus the label a person can
+/// recognize it by, and whether that group is collapsed.
+///
+/// The id alone names nothing a caller could match -- it is a Uuid minted in
+/// memory and minted afresh on restart -- so the name rides along, the same way
+/// `remote_host_id` is always paired with `remote_host_label`. All three are
+/// null when the tab belongs to no group.
+fn tab_group_fields(
+    entry: &TabEntry,
+    action: ActionKind,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<(Option<String>, Option<String>, Option<bool>), ControlError> {
+    let Some(workspace) = workspace_for_window(entry.window_id, action, ctx)? else {
+        return Ok((None, None, None));
+    };
+    let tab_pane_group_id = entry.pane_group.id();
+    Ok(workspace.read(ctx, |workspace, _| {
+        let group_id = workspace
+            .tabs
+            .iter()
+            .find(|tab| tab.pane_group.id() == tab_pane_group_id)
+            .and_then(|tab| tab.group_id);
+        match group_id.and_then(|id| workspace.tab_groups.get(&id).map(|group| (id, group))) {
+            Some((id, group)) => (
+                Some(id.0.to_string()),
+                group.name.clone(),
+                Some(group.collapsed),
+            ),
+            None => (None, None, None),
+        }
     }))
 }
 
