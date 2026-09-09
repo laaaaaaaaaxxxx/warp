@@ -87,7 +87,6 @@ fn rejects_excluded_command_routes() {
         vec!["warpctrl", "block", "list"],
         vec!["warpctrl", "block", "inspect", "block_1"],
         vec!["warpctrl", "block", "output", "block_1"],
-        vec!["warpctrl", "input", "get"],
         vec!["warpctrl", "input", "clear"],
         vec!["warpctrl", "input", "mode", "set", "agent"],
         vec!["warpctrl", "input", "run", "pwd"],
@@ -394,6 +393,14 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             vec!["warpctrl", "pane", "unmaximize"],
         ),
         (ActionKind::PaneClose, vec!["warpctrl", "pane", "close"]),
+        (
+            ActionKind::SelectionClear,
+            vec!["warpctrl", "selection", "clear"],
+        ),
+        (
+            ActionKind::SelectionSet,
+            vec!["warpctrl", "selection", "set", "--range", "0:0-0:4"],
+        ),
         (
             ActionKind::PaneRename,
             vec!["warpctrl", "pane", "rename", "server"],
@@ -744,6 +751,10 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             SurfaceCommand::AgentManagement(command) => match command {
                 SurfaceOpenCommand::Open(_) => Some(ActionKind::SurfaceAgentManagementOpen),
             },
+        },
+        ControlCommand::Selection(command) => match command {
+            SelectionCommand::Clear(_) => Some(ActionKind::SelectionClear),
+            SelectionCommand::Set(_) => Some(ActionKind::SelectionSet),
         },
         ControlCommand::Completions { .. } => None,
     }
