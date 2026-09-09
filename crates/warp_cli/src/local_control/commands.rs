@@ -17,7 +17,7 @@ use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
     ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, FileCommand,
     InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
-    SelectionSetArgs, SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand,
+    SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand,
     SurfaceOpenToggleCommand, SurfaceQueryCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
     TabActivateArgs, TabCloseArgs, TabColorCommand, TabCommand, TargetArgs, ThemeCommand,
     WindowCommand,
