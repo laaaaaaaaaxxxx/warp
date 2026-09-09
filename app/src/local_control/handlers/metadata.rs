@@ -118,6 +118,10 @@ pub(super) struct PaneEntry {
     pub(super) window_index: usize,
     pub(super) tab_id: String,
     pub(super) tab_index: usize,
+    /// Which tab the owning window is currently showing. Carried down from the
+    /// tab entry so a pane can say whether it is the one on screen without a
+    /// second lookup.
+    pub(super) workspace_active_tab_index: usize,
     pub(super) index: usize,
     pub(super) pane_group: ViewHandle<PaneGroup>,
     pub(super) pane_id: PaneId,
@@ -726,6 +730,13 @@ pub(crate) fn pane_list(
                 "ranges": lsp_ranges_json(&ranges),
             }));
         }
+        // Rendered size in points, read off the laid-out element. The write
+        // side (`pane.resize --axis/--size`) speaks the same unit, so a value
+        // read here can be handed straight back. Takes the mutable context the
+        // element-position lookup requires, so it cannot ride the `.read()` above.
+        let pane_size = entry
+            .pane_group
+            .update(ctx, |pane_group, cx| pane_group.pane_size_by_id(entry.pane_id, cx));
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
@@ -751,6 +762,15 @@ pub(crate) fn pane_list(
             "cli_agent": cli_agent,
             "color_configured": color.is_some(),
             "color": color,
+            // Where the person is. `is_active` is per tab -- every tab has one
+            // -- so it cannot answer "which pane is being looked at". This adds
+            // the missing half: the pane is focused in its tab AND its tab is
+            // the one its window is showing. Both halves read workspace and
+            // pane-group state directly, so unlike an `active`/index selector
+            // this still answers when Warp is not the frontmost app.
+            "is_visible_focus": is_active && entry.tab_index == entry.workspace_active_tab_index,
+            "width_points": pane_size.map(|size| size.x()),
+            "height_points": pane_size.map(|size| size.y()),
             "selections": selections,
         }));
     }
@@ -1290,6 +1310,7 @@ pub(super) fn pane_entries_for_tabs(
                     window_index: tab.window_index,
                     tab_id: tab_id.clone(),
                     tab_index: tab.index,
+                    workspace_active_tab_index: tab.workspace_active_tab_index,
                     index,
                     pane_group: pane_group.clone(),
                     pane_id,

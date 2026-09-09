@@ -24,6 +24,15 @@ pub enum Direction {
     Next,
 }
 
+/// Layout axis an absolute pane size is measured along. `Horizontal` is the
+/// width of a side-by-side split; `Vertical` is the height of a stacked one.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Axis {
+    Horizontal,
+    Vertical,
+}
+
 /// Tab type accepted by `tab.create` and `window.create`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -150,15 +159,18 @@ pub struct RenameParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ResizeParams {
-    /// Required for the stepping path; ignored when `width` is given.
+    /// Required for the stepping path; ignored when `axis` and `size` are given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<Direction>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub amount: Option<u32>,
-    /// Absolute width in points for the targeted pane; the pane sharing its
-    /// divider absorbs the remainder.
+    /// Axis the absolute `size` is measured along; both are required together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub width: Option<f32>,
+    pub axis: Option<Axis>,
+    /// Absolute size in points along `axis` for the targeted pane; the pane
+    /// sharing its divider absorbs the remainder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

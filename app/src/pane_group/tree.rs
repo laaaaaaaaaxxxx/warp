@@ -533,13 +533,23 @@ impl PaneData {
         self.root.reset_pane_sizes(border_id)
     }
 
-    pub fn set_pane_width_by_id(
+    pub fn set_pane_size_by_id(
         &mut self,
         pane_id: PaneId,
-        width: f32,
+        axis: SplitDirection,
+        size: f32,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
-        self.root.set_pane_width_by_id(pane_id, width, ctx)
+        self.root.set_pane_size_by_id(pane_id, axis, size, ctx)
+    }
+
+    /// Rendered size of `pane_id`, or `None` when no leaf carries it.
+    pub fn pane_size_by_id(
+        &self,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> Option<Vector2F> {
+        self.root.pane_size_by_id(pane_id, ctx)
     }
 
     pub fn adjust_pane_size_by_id(
@@ -779,15 +789,30 @@ impl PaneNode {
 
     /// Same contract as [`PaneNode::adjust_pane_size_by_id`]: `true` hands the
     /// match back for a parent branch to act on.
-    pub fn set_pane_width_by_id(
+    pub fn set_pane_size_by_id(
         &mut self,
         pane_id: PaneId,
-        width: f32,
+        axis: SplitDirection,
+        size: f32,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         match self {
             PaneNode::Leaf(id) => *id == pane_id,
-            PaneNode::Branch(branch) => branch.set_pane_width_by_id(pane_id, width, ctx),
+            PaneNode::Branch(branch) => branch.set_pane_size_by_id(pane_id, axis, size, ctx),
+        }
+    }
+
+    /// Rendered size of the leaf carrying `pane_id`, or `None` when this
+    /// subtree does not hold it.
+    pub fn pane_size_by_id(
+        &self,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> Option<Vector2F> {
+        match self {
+            PaneNode::Leaf(id) if *id == pane_id => Some(self.pane_size(ctx)),
+            PaneNode::Leaf(_) => None,
+            PaneNode::Branch(branch) => branch.pane_size_by_id(pane_id, ctx),
         }
     }
 
@@ -1228,19 +1253,20 @@ impl PaneBranch {
         false
     }
 
-    /// Gives the matched pane `width` points and the rest of the pair to the
-    /// pane it shares a divider with. Absolute: the outcome depends only on
-    /// `width`, not on how the split currently sits, so repeating the call
-    /// lands in the same place.
-    pub fn set_pane_width_by_id(
+    /// Gives the matched pane `size` points along `axis` and the rest of the
+    /// pair to the pane it shares a divider with. Absolute: the outcome depends
+    /// only on `size`, not on how the split currently sits, so repeating the
+    /// call lands in the same place.
+    pub fn set_pane_size_by_id(
         &mut self,
         pane_id: PaneId,
-        width: f32,
+        axis: SplitDirection,
+        size: f32,
         ctx: &mut ViewContext<PaneGroup>,
     ) -> bool {
         let mut matched = None;
         for (idx, (_, node)) in self.nodes.iter_mut().enumerate() {
-            if node.set_pane_width_by_id(pane_id, width, ctx) {
+            if node.set_pane_size_by_id(pane_id, axis, size, ctx) {
                 matched = Some(idx);
                 break;
             }
@@ -1248,15 +1274,15 @@ impl PaneBranch {
         let Some(idx) = matched else {
             return false;
         };
-        // Only a horizontal branch expresses a width; hand a vertical one up,
-        // same as the delta path does.
-        if self.axis != SplitDirection::Horizontal {
+        // Only a branch on the requested axis expresses that size; hand the
+        // other one up, same as the delta path does.
+        if self.axis != axis {
             return true;
         }
 
         let divider_idx = idx.min(self.dividers.len() - 1);
-        let size_1 = self.nodes[divider_idx].1.pane_size(ctx).x();
-        let size_2 = self.nodes[divider_idx + 1].1.pane_size(ctx).x();
+        let size_1 = pane_extent(&self.nodes[divider_idx].1, axis, ctx);
+        let size_2 = pane_extent(&self.nodes[divider_idx + 1].1, axis, ctx);
         let total_size = size_1 + size_2;
         if total_size <= 0. {
             return false;
@@ -1268,7 +1294,7 @@ impl PaneBranch {
 
         // Same floor the drag path enforces; no size policy is added here.
         let minimum_pane_size = get_minimum_pane_size(ctx);
-        let target_size = width
+        let target_size = size
             .max(minimum_pane_size)
             .min(total_size - minimum_pane_size);
         let target_flex = (target_size / total_size * total_flex)
@@ -1283,6 +1309,20 @@ impl PaneBranch {
         self.nodes[divider_idx].0 = PaneFlex(left_flex);
         self.nodes[divider_idx + 1].0 = PaneFlex(right_flex);
         false
+    }
+
+    /// Rendered size of the leaf carrying `pane_id` anywhere under this branch.
+    pub fn pane_size_by_id(
+        &self,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<PaneGroup>,
+    ) -> Option<Vector2F> {
+        for (_, node) in &self.nodes {
+            if let Some(size) = node.pane_size_by_id(pane_id, ctx) {
+                return Some(size);
+            }
+        }
+        None
     }
 
     // Get the size of a branch by recursively adding the size of its children.
@@ -1668,11 +1708,37 @@ impl From<crate::launch_configs::launch_config::SplitDirection> for SplitDirecti
 // file and every line added there is a rebase conflict paid on each sync.
 // `tree` is a child module of `pane_group`, so it still reaches private state.
 impl PaneGroup {
-    /// Sets `pane_id` to `width` points; the pane sharing its divider absorbs
-    /// the remainder.
-    pub fn set_pane_width(&mut self, pane_id: PaneId, width: f32, ctx: &mut ViewContext<Self>) {
-        self.panes.set_pane_width_by_id(pane_id, width, ctx);
+    /// Sets `pane_id` to `size` points along `axis`; the pane sharing its
+    /// divider absorbs the remainder.
+    pub fn set_pane_size(
+        &mut self,
+        pane_id: PaneId,
+        axis: SplitDirection,
+        size: f32,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.panes.set_pane_size_by_id(pane_id, axis, size, ctx);
         ctx.notify();
         ctx.emit(super::Event::AppStateChanged);
+    }
+
+    /// Rendered size of `pane_id` in points, or `None` when this group does not
+    /// carry it. Reads the laid-out element, so it reports what is on screen
+    /// now, not what the flex ratios would produce once laid out.
+    pub fn pane_size_by_id(
+        &self,
+        pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<Vector2F> {
+        self.panes.pane_size_by_id(pane_id, ctx)
+    }
+}
+
+/// Extent of `node` along `axis` — the half of `pane_size` that an absolute
+/// size on that axis is measured against.
+fn pane_extent(node: &PaneNode, axis: SplitDirection, ctx: &mut ViewContext<PaneGroup>) -> f32 {
+    match axis {
+        SplitDirection::Horizontal => node.pane_size(ctx).x(),
+        SplitDirection::Vertical => node.pane_size(ctx).y(),
     }
 }
