@@ -173,6 +173,13 @@ pub struct ResizeParams {
     pub size: Option<f32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RightPanelResizeParams {
+    /// New width of the right panel, in points.
+    pub width: f32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TabActivateParams {

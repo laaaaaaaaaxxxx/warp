@@ -596,6 +596,21 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             vec!["warpctrl", "surface", "right-panel", "toggle"],
         ),
         (
+            ActionKind::SurfaceRightPanelResize,
+            vec![
+                "warpctrl",
+                "surface",
+                "right-panel",
+                "resize",
+                "--width",
+                "480",
+            ],
+        ),
+        (
+            ActionKind::SurfaceRightPanelInspect,
+            vec!["warpctrl", "surface", "right-panel", "inspect"],
+        ),
+        (
             ActionKind::SurfaceVerticalTabsOpen,
             vec!["warpctrl", "surface", "vertical-tabs", "open"],
         ),
@@ -764,7 +779,9 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
                 SurfaceToggleCommand::Toggle(_) => Some(ActionKind::SurfaceLeftPanelToggle),
             },
             SurfaceCommand::RightPanel(command) => match command {
-                SurfaceToggleCommand::Toggle(_) => Some(ActionKind::SurfaceRightPanelToggle),
+                SurfaceRightPanelCommand::Toggle(_) => Some(ActionKind::SurfaceRightPanelToggle),
+                SurfaceRightPanelCommand::Resize(_) => Some(ActionKind::SurfaceRightPanelResize),
+                SurfaceRightPanelCommand::Inspect(_) => Some(ActionKind::SurfaceRightPanelInspect),
             },
             SurfaceCommand::VerticalTabs(command) => match command {
                 SurfaceOpenToggleCommand::Open(_) => Some(ActionKind::SurfaceVerticalTabsOpen),

@@ -7,9 +7,9 @@ mod tests;
 use std::path::{Path, PathBuf};
 
 use ::local_control::protocol::{
-    Axis as ControlAxis, Direction as ControlDirection, DirectionParams, FileOpenParams, PageQueryParams, QueryParams,
-    ResizeParams, TabActivateParams, TabActivationMode, TabCreateParams, TabTarget, TabType,
-    TargetSelector, TextParams,
+    Axis as ControlAxis, Direction as ControlDirection, DirectionParams, FileOpenParams,
+    PageQueryParams, QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams,
+    TabActivationMode, TabCreateParams, TabTarget, TabType, TargetSelector, TextParams,
 };
 use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
 use serde_json::json;
@@ -26,7 +26,8 @@ use warp_util::remote_path::RemotePath;
 use warp_util::standardized_path::StandardizedPath;
 #[cfg(feature = "local_fs")]
 use warpui::SingletonEntity;
-use warpui::{AppContext, ModelContext, TypedActionView};
+use warpui::elements::ResizableStateHandle;
+use warpui::{AppContext, ModelContext, TypedActionView, WindowId};
 
 #[cfg(feature = "local_fs")]
 use crate::code::editor_management::CodeSource;
@@ -157,6 +158,10 @@ pub(crate) fn handle(
             ctx,
         ),
         ActionKind::SurfaceCodeReviewOpen => surface_code_review_open(instance_id, target, ctx),
+        ActionKind::SurfaceRightPanelResize => {
+            surface_right_panel_resize(instance_id, params, target, ctx)
+        }
+        ActionKind::SurfaceRightPanelInspect => surface_right_panel_inspect(target, ctx),
         ActionKind::SurfaceCodeReviewToggle | ActionKind::SurfaceRightPanelToggle => {
             workspace_action(
                 instance_id,
@@ -306,6 +311,80 @@ fn surface_theme_picker_open(
         }
     });
     Ok(ack(instance_id, action))
+}
+
+/// Sets the right panel's width, in points, on the targeted window.
+///
+/// Writes the very `ResizableState` the drag bar writes, so the value rides the
+/// window snapshot across restarts and is bounded by upstream's own clamp — no
+/// size policy is added here. Code Review has no width of its own: it lives in
+/// this panel, so sizing the panel is how Code Review gets sized.
+fn surface_right_panel_resize(
+    instance_id: &Option<InstanceId>,
+    params: &serde_json::Value,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let action = ActionKind::SurfaceRightPanelResize;
+    let RightPanelResizeParams { width } = decode_params(params)?;
+    let window_id = target_window_id_for_target(ctx, target, action)?;
+    let state = right_panel_width_state(action, window_id, ctx)?;
+    {
+        let mut state = state.lock().unwrap();
+        state.set_size(width);
+        state.clamp_size();
+    }
+    // The panel reads its handle while laying out, so it needs a repaint nudge.
+    if let Some(views) =
+        ctx.views_of_type::<crate::workspace::view::right_panel::RightPanelView>(window_id)
+    {
+        for view in views {
+            view.update(ctx, |_, ctx| ctx.notify());
+        }
+    }
+    Ok(ack(instance_id, action))
+}
+
+/// Reads the right panel's current width in points.
+///
+/// This is the other half of `surface.right_panel.resize`: a caller holding a
+/// target pane width needs the panel's current width to work out what to set.
+fn surface_right_panel_inspect(
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let action = ActionKind::SurfaceRightPanelInspect;
+    let window_id = target_window_id_for_target(ctx, target, action)?;
+    let state = right_panel_width_state(action, window_id, ctx)?;
+    let width = state.lock().unwrap().size();
+    Ok(json!({
+        "action": action.as_str(),
+        "width_points": width,
+    }))
+}
+
+/// Resolves the targeted window's right-panel width state.
+fn right_panel_width_state(
+    action: ActionKind,
+    window_id: WindowId,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<ResizableStateHandle, ControlError> {
+    use crate::terminal::resizable_data::{ModalType, ResizableData};
+    use warpui::SingletonEntity;
+
+    let resizable_data = ResizableData::handle(ctx);
+    resizable_data
+        .as_ref(ctx)
+        .get_handle(window_id, ModalType::RightPanelWidth)
+        .ok_or_else(|| {
+            ControlError::new(
+                ErrorCode::MissingTarget,
+                format!(
+                    "{} could not resolve the window's right panel width",
+                    action.as_str()
+                ),
+            )
+        })
 }
 
 fn surface_code_review_open(
