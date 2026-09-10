@@ -4,8 +4,9 @@ use local_control::protocol::{
     Action, ActionKind, ActionNameParams, BindingNameParams, BooleanValueParams, ColorValueParams,
     ControlError, DirectionParams, EmptyParams, ErrorCode, FileOpenParams, KeyParams,
     KeyValueParams, PageQueryParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
-    SelectionRange, SelectionRangesParams, SettingListParams, TabActivateParams, TabActivationMode,
-    TabCloseMode, TabCloseParams, TabCreateParams, TextParams, ThemeNameParams,
+    RightPanelResizeParams, SelectionRange, SelectionRangesParams, SettingListParams,
+    TabActivateParams, TabActivationMode, TabCloseMode, TabCloseParams, TabCreateParams,
+    TextParams, ThemeNameParams,
 };
 use local_control::selection::select_instance;
 use serde::Serialize;
@@ -17,11 +18,10 @@ use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
     ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, FileCommand,
     InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
-    SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand,
-    TabGroupCommand,
-    SurfaceOpenToggleCommand, SurfaceQueryCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
-    TabActivateArgs, TabCloseArgs, TabColorCommand, TabCommand, TargetArgs, ThemeCommand,
-    WindowCommand,
+    SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand, SurfaceOpenToggleCommand,
+    SurfaceQueryCommand, SurfaceRightPanelCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
+    TabActivateArgs, TabCloseArgs, TabColorCommand, TabCommand, TabGroupCommand, TargetArgs,
+    ThemeCommand, WindowCommand,
 };
 
 pub(super) fn run_surface_command(
@@ -109,9 +109,26 @@ pub(super) fn run_surface_command(
         SurfaceCommand::LeftPanel(command) => {
             run_surface_toggle_command(command, ActionKind::SurfaceLeftPanelToggle, output_format)
         }
-        SurfaceCommand::RightPanel(command) => {
-            run_surface_toggle_command(command, ActionKind::SurfaceRightPanelToggle, output_format)
-        }
+        SurfaceCommand::RightPanel(command) => match command {
+            SurfaceRightPanelCommand::Toggle(args) => run_action_with_params(
+                args,
+                ActionKind::SurfaceRightPanelToggle,
+                EmptyParams {},
+                output_format,
+            ),
+            SurfaceRightPanelCommand::Resize(args) => run_action_with_params(
+                args.target,
+                ActionKind::SurfaceRightPanelResize,
+                RightPanelResizeParams { width: args.width },
+                output_format,
+            ),
+            SurfaceRightPanelCommand::Inspect(args) => run_action_with_params(
+                args,
+                ActionKind::SurfaceRightPanelInspect,
+                EmptyParams {},
+                output_format,
+            ),
+        },
         SurfaceCommand::VerticalTabs(command) => match command {
             SurfaceOpenToggleCommand::Open(args) => run_action_with_params(
                 args,

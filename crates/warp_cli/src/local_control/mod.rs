@@ -495,9 +495,9 @@ pub enum SurfaceCommand {
     #[command(subcommand)]
     LeftPanel(SurfaceToggleCommand),
 
-    /// Toggle the right panel.
+    /// Toggle, size, or read the right panel — the panel Code Review lives in.
     #[command(subcommand)]
-    RightPanel(SurfaceToggleCommand),
+    RightPanel(SurfaceRightPanelCommand),
 
     /// Open or toggle vertical tabs.
     #[command(subcommand)]
@@ -538,6 +538,18 @@ pub enum SurfaceOpenToggleCommand {
 pub enum SurfaceToggleCommand {
     /// Toggle the surface.
     Toggle(TargetArgs),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum SurfaceRightPanelCommand {
+    /// Toggle the surface.
+    Toggle(TargetArgs),
+
+    /// Set the panel width in points.
+    Resize(RightPanelResizeArgs),
+
+    /// Read the panel width in points.
+    Inspect(TargetArgs),
 }
 
 /// Commands that inspect Warp themes.
@@ -757,6 +769,17 @@ pub struct PaneResizeArgs {
     /// sharing its divider absorbs the remainder.
     #[arg(long = "size", requires = "axis")]
     pub size: Option<f32>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct RightPanelResizeArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Absolute width in points for the right panel; clamped to the panel's
+    /// own bounds by the same pass the drag bar runs.
+    #[arg(long = "width")]
+    pub width: f32,
 }
 
 #[derive(Debug, Clone, Args)]

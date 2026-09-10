@@ -46,6 +46,9 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         ActionParameterSpec::Query => parse_params::<QueryParams>(action),
         ActionParameterSpec::Rename => parse_params::<RenameParams>(action),
         ActionParameterSpec::Resize => parse_params::<ResizeParams>(action),
+        ActionParameterSpec::RightPanelResize => {
+            parse_params::<::local_control::protocol::RightPanelResizeParams>(action)
+        }
         ActionParameterSpec::SelectionRanges => parse_params::<SelectionRangesParams>(action),
         ActionParameterSpec::TabActivate => parse_params::<TabActivateParams>(action),
         ActionParameterSpec::TabClose => parse_params::<TabCloseParams>(action),
