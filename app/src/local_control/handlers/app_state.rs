@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use ::local_control::protocol::{
     Axis as ControlAxis, Direction as ControlDirection, DirectionParams, FileOpenParams,
-    PageQueryParams, QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams,
+    LspEnableParams, PageQueryParams, QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams,
     TabActivationMode, TabCreateParams, TabTarget, TabType, TargetSelector, TextParams,
 };
 use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
@@ -66,6 +66,7 @@ pub(crate) fn handle(
         ActionKind::AppFocus | ActionKind::WindowFocus => {
             focus_window(instance_id, action, target, ctx)
         }
+        ActionKind::CodeLspEnable => code_lsp_enable(instance_id, params, target, ctx),
         ActionKind::WindowCreate => window_create(instance_id, params, target, ctx),
         ActionKind::TabCreate => create_tab(instance_id, params, target, ctx),
         ActionKind::TabActivate => tab_activate(instance_id, params, target, ctx),
@@ -282,6 +283,54 @@ fn workspace_action(
         workspace.handle_action(&action, ctx);
     });
     Ok(ack(instance_id, action_kind))
+}
+
+/// Enables and starts a language server for a workspace.
+///
+/// Dispatches the very action the settings page's own toggle dispatches, so
+/// pressing this from the CLI and clicking it in the UI run the same code.
+#[cfg(feature = "local_fs")]
+fn code_lsp_enable(
+    instance_id: &Option<InstanceId>,
+    params: &serde_json::Value,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    use crate::settings_view::{CodeIndexingPageAction, SettingsAction};
+    use lsp::supported_servers::LSPServerType;
+
+    let action = ActionKind::CodeLspEnable;
+    let LspEnableParams {
+        workspace_path,
+        server_type,
+    } = decode_params(params)?;
+
+    let server_type = match server_type.as_str() {
+        "rust-analyzer" => LSPServerType::RustAnalyzer,
+        "gopls" => LSPServerType::GoPls,
+        "pyright-langserver" => LSPServerType::Pyright,
+        "typescript-language-server" => LSPServerType::TypeScriptLanguageServer,
+        "clangd" => LSPServerType::Clangd,
+        other => {
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                format!("{} does not know server type {other:?}", action.as_str()),
+            ));
+        }
+    };
+
+    workspace_action(
+        instance_id,
+        action,
+        WorkspaceAction::DispatchToSettingsTab(SettingsAction::CodeIndexing(
+            CodeIndexingPageAction::EnableSuggestedLspServer {
+                workspace_path: PathBuf::from(workspace_path),
+                server_type,
+            },
+        )),
+        target,
+        ctx,
+    )
 }
 
 fn surface_workspace_action(

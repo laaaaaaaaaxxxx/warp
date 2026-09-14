@@ -41,6 +41,9 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         ActionParameterSpec::FileOpen => parse_params::<FileOpenParams>(action),
         ActionParameterSpec::Key => parse_params::<KeyParams>(action),
         ActionParameterSpec::KeyValue => parse_params::<KeyValueParams>(action),
+        ActionParameterSpec::LspEnable => {
+            parse_params::<::local_control::protocol::LspEnableParams>(action)
+        }
         ActionParameterSpec::Namespace => parse_params::<NamespaceParams>(action),
         ActionParameterSpec::PageQuery => parse_params::<PageQueryParams>(action),
         ActionParameterSpec::Query => parse_params::<QueryParams>(action),
@@ -79,7 +82,8 @@ pub(crate) fn validate_action_target(
         | TargetScope::Session
         | TargetScope::Input
         | TargetScope::Surface
-        | TargetScope::File => false,
+        | TargetScope::File
+        | TargetScope::Code => false,
     };
     if rejects_all_targets && has_target {
         return Err(ControlError::new(

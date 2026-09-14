@@ -735,6 +735,13 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
         ControlCommand::File(command) => match command {
             FileCommand::Open(_) => Some(ActionKind::FileOpen),
         },
+        ControlCommand::Code(command) => match command {
+            crate::local_control::CodeCommand::Lsp(command) => match command {
+                crate::local_control::CodeLspCommand::Enable(_) => {
+                    Some(ActionKind::CodeLspEnable)
+                }
+            },
+        },
         ControlCommand::Surface(command) => match command {
             SurfaceCommand::List(_) => Some(ActionKind::SurfaceList),
             SurfaceCommand::Settings(command) => match command {

@@ -10,7 +10,7 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use commands::{
     run_action_catalog_command, run_app_command, run_appearance_command, run_capability_command,
-    run_file_command, run_input_command, run_instance_command, run_keybinding_command,
+    run_code_command, run_file_command, run_input_command, run_instance_command, run_keybinding_command,
     run_pane_command, run_selection_command, run_session_command, run_setting_command,
     run_surface_command, run_tab_command, run_theme_command, run_window_command,
 };
@@ -191,6 +191,10 @@ pub enum ControlCommand {
     /// Inspect open file app-state metadata.
     #[command(subcommand)]
     File(FileCommand),
+
+    /// Control code intelligence for a workspace.
+    #[command(subcommand)]
+    Code(CodeCommand),
 
     /// Open or toggle local Warp surfaces.
     #[command(subcommand)]
@@ -623,6 +627,33 @@ pub enum KeybindingCommand {
 }
 
 #[derive(Debug, Clone, Subcommand)]
+pub enum CodeCommand {
+    /// Control language servers.
+    #[command(subcommand)]
+    Lsp(CodeLspCommand),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum CodeLspCommand {
+    /// Enable and start a language server for a workspace.
+    Enable(CodeLspEnableArgs),
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct CodeLspEnableArgs {
+    /// Absolute path of the workspace (repo root).
+    #[arg(long = "workspace")]
+    pub workspace_path: String,
+
+    /// Language server binary name, e.g. rust-analyzer.
+    #[arg(long = "server")]
+    pub server_type: String,
+
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+#[derive(Debug, Clone, Subcommand)]
 pub enum FileCommand {
     /// Open a file in Warp.
     Open(FileOpenArgs),
@@ -1046,6 +1077,7 @@ fn run_inner(args: ControlArgs) -> Result<(), local_control::protocol::ControlEr
         ControlCommand::Setting(command) => run_setting_command(command, output_format),
         ControlCommand::Keybinding(command) => run_keybinding_command(command, output_format),
         ControlCommand::File(command) => run_file_command(command, output_format),
+        ControlCommand::Code(command) => run_code_command(command, output_format),
         ControlCommand::Surface(command) => run_surface_command(command, output_format),
         ControlCommand::Completions { shell } => generate_completions_to_stdout(shell),
     }

@@ -3,7 +3,7 @@ use local_control::discovery::InstanceRecord;
 use local_control::protocol::{
     Action, ActionKind, ActionNameParams, BindingNameParams, BooleanValueParams, ColorValueParams,
     ControlError, DirectionParams, EmptyParams, ErrorCode, FileOpenParams, KeyParams,
-    KeyValueParams, PageQueryParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
+    KeyValueParams, LspEnableParams, PageQueryParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
     RightPanelResizeParams, SelectionRange, SelectionRangesParams, SettingListParams,
     TabActivateParams, TabActivationMode, TabCloseMode, TabCloseParams, TabCreateParams,
     TextParams, ThemeNameParams,
@@ -16,7 +16,8 @@ use crate::agent::OutputFormat;
 use crate::local_control::output::{write_json, write_json_line};
 use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
-    ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, FileCommand,
+    ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, CodeCommand,
+    CodeLspCommand, FileCommand,
     InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
     SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand, SurfaceOpenToggleCommand,
     SurfaceQueryCommand, SurfaceRightPanelCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
@@ -776,6 +777,25 @@ pub(super) fn run_keybinding_command(
             },
             output_format,
         ),
+    }
+}
+
+pub(super) fn run_code_command(
+    command: CodeCommand,
+    output_format: OutputFormat,
+) -> Result<(), ControlError> {
+    match command {
+        CodeCommand::Lsp(command) => match command {
+            CodeLspCommand::Enable(args) => run_action_with_params(
+                args.target,
+                ActionKind::CodeLspEnable,
+                LspEnableParams {
+                    workspace_path: args.workspace_path,
+                    server_type: args.server_type,
+                },
+                output_format,
+            ),
+        },
     }
 }
 
