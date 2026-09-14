@@ -182,6 +182,15 @@ pub struct RightPanelResizeParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct LspEnableParams {
+    /// Absolute path of the workspace (repo root) to enable a language server for.
+    pub workspace_path: String,
+    /// Language server binary name, e.g. "rust-analyzer".
+    pub server_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TabActivateParams {
     pub mode: TabActivationMode,
 }
