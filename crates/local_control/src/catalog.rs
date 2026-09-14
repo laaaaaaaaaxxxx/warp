@@ -17,6 +17,7 @@ pub enum TargetScope {
     Appearance,
     Surface,
     File,
+    Code,
     Keybinding,
     Action,
     Capability,
@@ -43,6 +44,7 @@ pub enum ActionParameterSpec {
     FileOpen,
     Key,
     KeyValue,
+    LspEnable,
     Namespace,
     PageQuery,
     Query,
@@ -311,5 +313,9 @@ define_action_catalog! {
 
     file {
         FileOpen => { name: "file.open", status: Implemented, target: File, params: FileOpen, result: Acknowledgement },
+    }
+
+    code {
+        CodeLspEnable => { name: "code.lsp.enable", status: Implemented, target: Code, params: LspEnable, result: Acknowledgement },
     }
 }
