@@ -3424,6 +3424,8 @@ impl CodeReviewView {
                 line,
                 column,
                 source_server_id,
+                // Code Review 侧不维护位置链，出发点用不上
+                origin: _,
             } => {
                 // Register the external file so it can use LSP features.
                 // The manager will skip registration if the path is under an existing workspace.

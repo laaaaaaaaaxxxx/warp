@@ -17,7 +17,7 @@ use crate::local_control::output::{write_json, write_json_line};
 use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
     ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, CodeCommand,
-    CodeLspCommand, FileCommand,
+    CodeLspCommand, CodeNavigateCommand, FileCommand,
     InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
     SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand, SurfaceOpenToggleCommand,
     SurfaceQueryCommand, SurfaceRightPanelCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
@@ -785,6 +785,14 @@ pub(super) fn run_code_command(
     output_format: OutputFormat,
 ) -> Result<(), ControlError> {
     match command {
+        CodeCommand::Navigate(command) => match command {
+            CodeNavigateCommand::Back(args) => {
+                run_action(args, ActionKind::CodeNavigateBack, output_format)
+            }
+            CodeNavigateCommand::Forward(args) => {
+                run_action(args, ActionKind::CodeNavigateForward, output_format)
+            }
+        },
         CodeCommand::Lsp(command) => match command {
             CodeLspCommand::Enable(args) => run_action_with_params(
                 args.target,

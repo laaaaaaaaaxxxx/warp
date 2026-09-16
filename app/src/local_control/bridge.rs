@@ -126,6 +126,8 @@ impl LocalControlBridge {
             | ActionKind::SurfaceRightPanelResize
             | ActionKind::SurfaceRightPanelInspect
             | ActionKind::CodeLspEnable
+            | ActionKind::CodeNavigateBack
+            | ActionKind::CodeNavigateForward
             | ActionKind::FileOpen => app_state::handle(
                 &self.instance_id,
                 request.action.kind,

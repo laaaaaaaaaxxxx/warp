@@ -67,6 +67,20 @@ pub(crate) fn handle(
             focus_window(instance_id, action, target, ctx)
         }
         ActionKind::CodeLspEnable => code_lsp_enable(instance_id, params, target, ctx),
+        ActionKind::CodeNavigateBack => workspace_action(
+            instance_id,
+            ActionKind::CodeNavigateBack,
+            WorkspaceAction::CodeNavigateBack,
+            target,
+            ctx,
+        ),
+        ActionKind::CodeNavigateForward => workspace_action(
+            instance_id,
+            ActionKind::CodeNavigateForward,
+            WorkspaceAction::CodeNavigateForward,
+            target,
+            ctx,
+        ),
         ActionKind::WindowCreate => window_create(instance_id, params, target, ctx),
         ActionKind::TabCreate => create_tab(instance_id, params, target, ctx),
         ActionKind::TabActivate => tab_activate(instance_id, params, target, ctx),
