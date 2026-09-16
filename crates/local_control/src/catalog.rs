@@ -317,5 +317,7 @@ define_action_catalog! {
 
     code {
         CodeLspEnable => { name: "code.lsp.enable", status: Implemented, target: Code, params: LspEnable, result: Acknowledgement },
+        CodeNavigateBack => { name: "code.navigate.back", status: Implemented, target: Code, params: None, result: Acknowledgement },
+        CodeNavigateForward => { name: "code.navigate.forward", status: Implemented, target: Code, params: None, result: Acknowledgement },
     }
 }

@@ -24511,6 +24511,46 @@ impl TypedActionView for Workspace {
             ToggleTabGroupColor { color, group_id } => {
                 self.toggle_tab_group_color(*group_id, *color, ctx)
             }
+            CodeNavigateBack => {
+                // 认聚焦的那个编辑器 pane；不认焦点的话，一个 tab 里有两个
+                // 编辑器 pane 时，键会去动另一个。
+                let group = self.active_tab_pane_group();
+                let focused = group.as_ref(ctx).focused_pane_id(ctx);
+                let view = group
+                    .as_ref(ctx)
+                    .code_panes(ctx)
+                    .find(|(id, _)| *id == focused)
+                    .map(|(_, v)| v.clone())
+                    .or_else(|| {
+                        group
+                            .as_ref(ctx)
+                            .code_panes(ctx)
+                            .map(|(_, v)| v.clone())
+                            .next()
+                    });
+                if let Some(view) = view {
+                    view.update(ctx, |code_view, ctx| code_view.navigate_back(ctx));
+                }
+            }
+            CodeNavigateForward => {
+                let group = self.active_tab_pane_group();
+                let focused = group.as_ref(ctx).focused_pane_id(ctx);
+                let view = group
+                    .as_ref(ctx)
+                    .code_panes(ctx)
+                    .find(|(id, _)| *id == focused)
+                    .map(|(_, v)| v.clone())
+                    .or_else(|| {
+                        group
+                            .as_ref(ctx)
+                            .code_panes(ctx)
+                            .map(|(_, v)| v.clone())
+                            .next()
+                    });
+                if let Some(view) = view {
+                    view.update(ctx, |code_view, ctx| code_view.navigate_forward(ctx));
+                }
+            }
             DispatchToSettingsTab(action) => {
                 let window_id = ctx.window_id();
                 ctx.dispatch_typed_action_for_view(window_id, self.settings_pane.id(), action)

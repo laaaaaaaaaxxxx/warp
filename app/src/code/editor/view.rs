@@ -1487,7 +1487,12 @@ impl CodeEditorView {
         });
     }
 
-    fn jump_to_line_column(&self, line: usize, column: Option<usize>, ctx: &mut ViewContext<Self>) {
+    pub fn jump_to_line_column(
+        &self,
+        line: usize,
+        column: Option<usize>,
+        ctx: &mut ViewContext<Self>,
+    ) {
         self.model.update(ctx, |model, ctx| {
             model.jump_to_line_column(line, column, ctx)
         })

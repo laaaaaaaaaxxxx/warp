@@ -126,6 +126,9 @@ pub enum AutoCloudHandoffTrigger {
 
 #[derive(Debug, Clone)]
 pub enum WorkspaceAction {
+    /// EPY-693：把光标位置链的回退/前进交给活动 tab 里的编辑器。
+    CodeNavigateBack,
+    CodeNavigateForward,
     ActivateTab(usize),
     ActivatePrevTab,
     ActivateNextTab,
@@ -1251,6 +1254,8 @@ impl WorkspaceAction {
             #[cfg(feature = "local_fs")]
             FileDeleted { .. } => false, // File deletion doesn't change workspace state
             OpenEnvironmentManagementPane => false,
+            // 只挪光标，不改任何需要落盘的工作区状态
+            CodeNavigateBack | CodeNavigateForward => false,
             #[cfg(target_os = "linux")]
             DismissWaylandCrashRecoveryBannerAndOpenLink => false,
             #[cfg(target_family = "wasm")]
