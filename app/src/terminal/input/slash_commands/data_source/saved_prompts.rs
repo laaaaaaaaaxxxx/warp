@@ -17,6 +17,11 @@ use crate::settings::AISettings;
 use crate::terminal::input::slash_commands::{AcceptSlashCommandOrSavedPrompt, InlineItem};
 use crate::workflows::CloudWorkflowModel;
 
+/// EPY-711: static commands and skills are both multiplied by 1000 (ceiling ~200k) while
+/// saved prompts carry an unmultiplied weighted sum (ceiling ~100), so prompts always rank
+/// last in a mixed list. Multiply them past both so self-authored entries win.
+const SAVED_PROMPT_SCORE_MULTIPLIER: OrderedFloat<f64> = OrderedFloat(1_000_000.0);
+
 pub(super) struct SavedPromptCandidate {
     pub(super) id: SyncId,
     pub(super) model: Arc<CloudWorkflowModel>,
@@ -112,7 +117,7 @@ pub(crate) fn fuzzy_match_saved_prompts(
                             font_family: snapshot.font_family,
                             name_match_result,
                             description_match_result: None,
-                            score: OrderedFloat(100.0),
+                            score: OrderedFloat(100.0) * SAVED_PROMPT_SCORE_MULTIPLIER,
                             compact_layout: false,
                         };
                         results.push(QueryResult::from(item));
@@ -142,7 +147,7 @@ pub(crate) fn fuzzy_match_saved_prompts(
                             font_family: snapshot.font_family,
                             name_match_result: match_result.name_match_result,
                             description_match_result: match_result.content_match_result,
-                            score,
+                            score: score * SAVED_PROMPT_SCORE_MULTIPLIER,
                             compact_layout: false,
                         };
                         results.push(QueryResult::from(item));
