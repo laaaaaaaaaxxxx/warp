@@ -234,6 +234,21 @@ impl TabData {
     }
 }
 
+/// 同文件内相隔多少行才算换了地方。取 10，抄 VS Code
+/// `TextEditorPaneSelection.TEXT_EDITOR_SELECTION_THRESHOLD`
+/// （它从 5 改到 10 的理由是对齐 Visual Studio）。
+const NAV_LINE_THRESHOLD: usize = 10;
+
+/// 链长上限。取 50，抄 VS Code `EditorNavigationStack.MAX_STACK_SIZE`
+/// （Vim jumplist 是 100、Visual Studio 是 20，同一量级）。
+const NAV_MAX_ENTRIES: usize = 50;
+
+/// 一次「光标停过的地方」：文件 + 1 起行 + 0 起列，与 `LineAndColumnArg` 同口径。
+struct NavLocation {
+    location: LocalOrRemotePath,
+    line_col: LineAndColumnArg,
+}
+
 pub struct CodeView {
     tab_group: Vec<TabData>,
     active_tab_index: usize,
@@ -243,6 +258,10 @@ pub struct CodeView {
     window_id: WindowId,
     drag_position: Option<TabBarDragPosition>,
     markdown_mode_segmented_control: Option<ViewHandle<MarkdownToggleView>>,
+    nav_back: Vec<NavLocation>,
+    nav_forward: Vec<NavLocation>,
+    nav_current: Option<NavLocation>,
+    nav_navigating: bool,
 }
 
 impl CodeView {
@@ -259,6 +278,10 @@ impl CodeView {
             window_id,
             drag_position: None,
             markdown_mode_segmented_control: None,
+            nav_back: Vec::new(),
+            nav_forward: Vec::new(),
+            nav_current: None,
+            nav_navigating: false,
         }
     }
 
@@ -555,6 +578,7 @@ impl CodeView {
                     code_manager.complete_pending_diffs(me.source.clone(), ctx);
                 });
             }
+            LocalCodeEditorEvent::SelectionMoved => me.on_selection_moved(ctx),
             LocalCodeEditorEvent::DiffStatusUpdated => (),
             LocalCodeEditorEvent::UserEdited => (),
             LocalCodeEditorEvent::VimMinimizeRequested => (),
@@ -571,7 +595,23 @@ impl CodeView {
                 line,
                 column,
                 source_server_id,
+                origin,
             } => {
+                // 人点的那个符号才是这次跳转的出发点；屏幕上那个旧光标不是。
+                // 只写自己的字段，不 update 任何 view。
+                if let Some(origin) = origin
+                    && let Some(here) = me
+                        .tab_at(me.active_tab_index)
+                        .and_then(|tab| tab.location.clone())
+                {
+                    me.nav_current = Some(NavLocation {
+                        location: here,
+                        line_col: LineAndColumnArg {
+                            line_num: origin.line + 1,
+                            column_num: Some(origin.column),
+                        },
+                    });
+                }
                 // Register the external file so it can use LSP features.
                 // The manager will skip registration if the path is under an existing workspace.
                 let lsp_manager = LspManagerModel::handle(ctx);
@@ -783,6 +823,102 @@ impl CodeView {
         if let Some(line_col) = line_col {
             self.jump_to_line_col_in_active_tab(line_col, ctx);
         }
+    }
+
+    /// 光标动过一次。抄 VS Code `onSelectionAwareEditorNavigation`：够格就压一条，
+    /// 不够格就替换当前那条（而不是丢弃），这样链顶永远是人真正待着的位置。
+    pub fn on_selection_moved(&mut self, ctx: &mut ViewContext<Self>) {
+        if self.nav_navigating {
+            return;
+        }
+        let Some(now) = self.current_nav_location(ctx) else {
+            return;
+        };
+        if let Some(prev) = self.nav_current.take() {
+            if Self::justifies_new_entry(&prev, &now) {
+                self.push_back_entry(prev);
+                self.nav_forward.clear();
+            }
+        }
+        self.nav_current = Some(now);
+    }
+
+    /// 抄 VS Code `EditorSelectionState.justifiesNewNavigationEntry` ＋
+    /// `TextEditorPaneSelection.compare`：换文件必记；同文件相隔不足
+    /// `NAV_LINE_THRESHOLD` 行视为同一处，不单独记一条。
+    fn justifies_new_entry(from: &NavLocation, to: &NavLocation) -> bool {
+        if from.location != to.location {
+            return true;
+        }
+        let a = from.line_col.line_num as i64;
+        let b = to.line_col.line_num as i64;
+        (a - b).abs() >= NAV_LINE_THRESHOLD as i64
+    }
+
+    /// 入链。去重照抄 Neovim / Zed：同文件同一行只留最新的一条，
+    /// 所以连按回退不会在同一个位置停两次。超出上限从最老的一头丢。
+    fn push_back_entry(&mut self, entry: NavLocation) {
+        self.nav_back.retain(|e| {
+            e.location != entry.location || e.line_col.line_num != entry.line_col.line_num
+        });
+        self.nav_back.push(entry);
+        if self.nav_back.len() > NAV_MAX_ENTRIES {
+            let overflow = self.nav_back.len() - NAV_MAX_ENTRIES;
+            self.nav_back.drain(0..overflow);
+        }
+    }
+
+    /// 回到某一条。先落 tab 与滚动，再显式设光标——
+    /// `open_or_focus_existing` 只设 pending scroll、不动 caret，上游自己的
+    /// 跳定义也是这么补的一句。
+    fn apply_nav(&mut self, target: NavLocation, ctx: &mut ViewContext<Self>) {
+        self.nav_navigating = true;
+        // 只负责把 tab 落对；行列交给下面那句，避免同一件事设两次
+        self.open_or_focus_existing(Some(target.location.clone()), None, ctx);
+        if let Some(editor) = self.tab_at(self.active_tab_index).map(|tab| &tab.editor_view) {
+            editor.update(ctx, |editor, ctx| {
+                editor.jump_to_line_column(
+                    target.line_col.line_num,
+                    target.line_col.column_num,
+                    ctx,
+                );
+            });
+        }
+        self.focus_contents(ctx);
+        self.nav_current = Some(target);
+        self.nav_navigating = false;
+    }
+
+    fn current_nav_location(&self, ctx: &AppContext) -> Option<NavLocation> {
+        let location = self.tab_at(self.active_tab_index)?.location.clone()?;
+        let (line, column) = self.active_cursor_position(ctx)?;
+        Some(NavLocation {
+            location,
+            line_col: LineAndColumnArg {
+                line_num: line + 1,
+                column_num: Some(column),
+            },
+        })
+    }
+
+    pub fn navigate_back(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(target) = self.nav_back.pop() else {
+            return;
+        };
+        if let Some(current) = self.nav_current.take().or_else(|| self.current_nav_location(ctx)) {
+            self.nav_forward.push(current);
+        }
+        self.apply_nav(target, ctx);
+    }
+
+    pub fn navigate_forward(&mut self, ctx: &mut ViewContext<Self>) {
+        let Some(target) = self.nav_forward.pop() else {
+            return;
+        };
+        if let Some(current) = self.nav_current.take().or_else(|| self.current_nav_location(ctx)) {
+            self.push_back_entry(current);
+        }
+        self.apply_nav(target, ctx);
     }
 
     pub fn open_or_focus_existing(
@@ -2385,6 +2521,7 @@ impl TypedActionView for CodeView {
             CodeViewAction::CloseSaved => {
                 self.close_saved_tabs(ctx);
             }
+
 
             CodeViewAction::ToggleMaximized => {
                 ctx.emit(CodeViewEvent::Pane(PaneEvent::ToggleMaximized));

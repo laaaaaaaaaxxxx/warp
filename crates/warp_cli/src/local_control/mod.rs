@@ -631,6 +631,17 @@ pub enum CodeCommand {
     /// Control language servers.
     #[command(subcommand)]
     Lsp(CodeLspCommand),
+    /// Walk the editor's cursor-position history.
+    #[command(subcommand)]
+    Navigate(CodeNavigateCommand),
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum CodeNavigateCommand {
+    /// Go to the previous cursor position.
+    Back(TargetArgs),
+    /// Go to the next cursor position.
+    Forward(TargetArgs),
 }
 
 #[derive(Debug, Clone, Subcommand)]

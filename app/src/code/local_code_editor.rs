@@ -108,6 +108,8 @@ pub fn init(app: &mut AppContext) {
 
 pub enum LocalCodeEditorEvent {
     FileLoaded,
+    /// 光标/选区动过。EPY-693 的位置链靠它记点。
+    SelectionMoved,
     FailedToLoad {
         error: Rc<FileLoadError>,
     },
@@ -144,6 +146,9 @@ pub enum LocalCodeEditorEvent {
         /// The ID of the LSP server that produced this definition.
         /// Used to register external files with the correct server.
         source_server_id: LanguageServerId,
+        /// 跳之前人点的那个符号（0 起行列）。位置链拿它当出发点，
+        /// 没有就沿用当前光标。
+        origin: Option<lsp::types::Location>,
     },
     /// Emitted when a comment is saved. This propagates the comment content
     /// changes to the CodeReviewView, which will update the comment model.
@@ -192,7 +197,13 @@ pub enum LocalCodeEditorAction {
     InsertSelectedTextToInput,
     SaveFile,
     DiscardUnsavedChanges,
-    NavigateToTarget(FileLocation),
+    NavigateToTarget {
+        target: FileLocation,
+        /// 点击处的 LSP 位置。只交给位置链当出发点，绝不在这里落光标——
+        /// 点击事件跑在 CodeEditorView 的 update 栈上，回头 update 它会
+        /// 触发 'Circular view update'。
+        origin: lsp::types::Location,
+    },
     GotoDefinition,
     FindReferences,
     OpenContextMenu,
@@ -463,6 +474,9 @@ impl LocalCodeEditorView {
             CodeEditorEvent::RequestOpenComment(uuid) => {
                 ctx.emit(LocalCodeEditorEvent::RequestOpenComment(*uuid));
             }
+            CodeEditorEvent::SelectionChanged => {
+                ctx.emit(LocalCodeEditorEvent::SelectionMoved);
+            }
             CodeEditorEvent::ViewportUpdated => {
                 ctx.emit(LocalCodeEditorEvent::ViewportUpdated);
             }
@@ -696,11 +710,15 @@ impl LocalCodeEditorView {
                 // Create the on-click action based on whether we have a definition
                 let on_click: Box<dyn Fn(&mut warpui::AppContext)> = if has_different_definition {
                     let target_location = definition_locations.first().unwrap().target.clone();
+                    let origin = lsp_position_for_references.clone();
                     Box::new(move |app| {
                         app.dispatch_typed_action_for_view(
                             window_id,
                             view_id,
-                            &LocalCodeEditorAction::NavigateToTarget(target_location.clone()),
+                            &LocalCodeEditorAction::NavigateToTarget {
+                                target: target_location.clone(),
+                                origin: origin.clone(),
+                            },
                         );
                     })
                 } else {
@@ -820,6 +838,7 @@ impl LocalCodeEditorView {
                         line: reference.line_number.saturating_sub(1), // Convert 1-based to 0-based
                         column: reference.column,
                         source_server_id,
+                        origin: None,
                     });
                     // Close the card after navigation
                     me.find_references_view = None;
@@ -1847,6 +1866,18 @@ impl LocalCodeEditorView {
         });
     }
 
+    /// 落光标并把它放到视野正中。与内置跳定义同一条路。
+    pub fn jump_to_line_column(
+        &self,
+        line: usize,
+        column: Option<usize>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        self.editor.update(ctx, |editor, ctx| {
+            editor.jump_to_line_column(line, column, ctx);
+        });
+    }
+
     /// If there is a pending diff available, apply it on the buffer. This should only be called _after_ the buffer
     /// has been loaded.
     fn apply_diffs_if_any(&mut self, ctx: &mut ViewContext<Self>) -> Option<usize> {
@@ -2182,6 +2213,7 @@ impl LocalCodeEditorView {
                                 line: location.target.location.line,
                                 column: location.target.location.column,
                                 source_server_id,
+                                origin: None,
                             });
                         }
                     }
@@ -2474,7 +2506,10 @@ impl TypedActionView for LocalCodeEditorView {
                     }
                 }
             }
-            LocalCodeEditorAction::NavigateToTarget(location) => {
+            LocalCodeEditorAction::NavigateToTarget {
+                target: location,
+                origin,
+            } => {
                 let Some(source_server_id) = self.lsp_server.as_ref().map(|s| s.as_ref(ctx).id())
                 else {
                     log::debug!("No LSP server available for navigate to target");
@@ -2485,6 +2520,7 @@ impl TypedActionView for LocalCodeEditorView {
                     line: location.location.line,
                     column: location.location.column,
                     source_server_id,
+                    origin: Some(origin.clone()),
                 });
             }
             LocalCodeEditorAction::GotoDefinition => {
@@ -2496,6 +2532,7 @@ impl TypedActionView for LocalCodeEditorView {
                 self.context_menu_state.is_open = false;
                 self.find_references_at_cursor(ctx);
             }
+
             LocalCodeEditorAction::OpenContextMenu => {
                 // Only show context menu if LSP is available
                 if self.is_lsp_server_available(ctx) {
