@@ -12597,7 +12597,15 @@ impl TerminalView {
                     .is_some_and(|workspace| {
                         workspace.as_ref(ctx).is_inline_rename_editor_focused(ctx)
                     });
-                if !inline_rename_editor_is_focused {
+                // Only when this pane is the one the person is in. A pane made
+                // in the background finishes bootstrapping a second after it is
+                // created, and taking the keyboard then pulls them out of
+                // whatever they were typing in.
+                let pane_is_focused = match self.focus_handle.as_ref() {
+                    Some(handle) => handle.is_focused(ctx),
+                    None => true,
+                };
+                if pane_is_focused && !inline_rename_editor_is_focused {
                     self.focus_terminal(ctx);
                 }
             }
