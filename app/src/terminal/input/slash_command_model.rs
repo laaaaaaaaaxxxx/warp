@@ -126,15 +126,20 @@ impl SlashCommandEntryState {
 
 /// Byte offset of the slash that opened the menu, if any.
 ///
-/// The trigger is the _last_ slash in the buffer rather than a leading one: on this build a slash
-/// reaches the input only as the menu keystroke, never as text meant to stay.
-pub fn slash_trigger_offset(input: &str) -> Option<usize> {
-    input.rfind('/')
+/// In the CLI agent rich input the trigger is the _last_ slash in the buffer: a slash reaches that
+/// input only as the menu keystroke. Everywhere else upstream's rule stands — only a leading slash
+/// opens the menu, and that is what keeps whole-buffer replacement from eating typed text.
+pub fn slash_trigger_offset(input: &str, rich_input_open: bool) -> Option<usize> {
+    if rich_input_open {
+        input.rfind('/')
+    } else {
+        input.starts_with('/').then_some(0)
+    }
 }
 
 /// The trigger slash and everything after it, which is what the classifier is fed.
-pub fn slash_trigger_slice(input: &str) -> Option<&str> {
-    slash_trigger_offset(input).map(|at| &input[at..])
+pub fn slash_trigger_slice(input: &str, rich_input_open: bool) -> Option<&str> {
+    slash_trigger_offset(input, rich_input_open).map(|at| &input[at..])
 }
 
 pub fn slash_command_composition_filter(input: &str) -> Option<&str> {
@@ -244,6 +249,12 @@ impl SlashCommandModel {
         !self.lifecycle.is_enabled()
     }
 
+    /// Whether the menu is attached to the CLI agent rich input rather than a plain terminal
+    /// input. The trigger rule and the replacement rule both key off this.
+    pub fn is_rich_input_open(&self, ctx: &AppContext) -> bool {
+        self.data_source.as_ref(ctx).is_cli_agent_input_open(ctx)
+    }
+
     pub fn state(&self) -> &SlashCommandEntryState {
         &self.state
     }
@@ -286,8 +297,11 @@ impl SlashCommandModel {
         let InputBufferUpdateEvent {
             new_content: new, ..
         } = event;
-        self.lifecycle
-            .input_changed(new.is_empty(), slash_trigger_slice(new).is_some());
+        let rich_input_open = self.data_source.as_ref(ctx).is_cli_agent_input_open(ctx);
+        self.lifecycle.input_changed(
+            new.is_empty(),
+            slash_trigger_slice(new, rich_input_open).is_some(),
+        );
         // AI-off is no longer a blanket disable: AI-dependent commands are filtered out
         // of `active_commands` via `Availability::AI_ENABLED`, so parsing still works for
         // non-AI commands like `/open-file`.
@@ -322,7 +336,7 @@ impl SlashCommandModel {
         match self
             .data_source
             .as_ref(ctx)
-            .parse_input(slash_trigger_slice(new).unwrap_or(new), ctx)
+            .parse_input(slash_trigger_slice(new, rich_input_open).unwrap_or(new), ctx)
         {
             ParsedSlashCommandInput::SlashCommand(detected_command) => {
                 if let SlashCommandEntryState::SlashCommand(old_detected_command) = &self.state

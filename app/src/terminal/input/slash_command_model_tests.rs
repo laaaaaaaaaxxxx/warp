@@ -2,7 +2,7 @@ use settings::Setting as _;
 use warp_errors::report_if_error;
 use warpui::{App, SingletonEntity as _};
 
-use super::{ParsedSlashCommandInput, SlashCommandEntryState};
+use super::{ParsedSlashCommandInput, SlashCommandEntryState, slash_trigger_offset};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::{QueuedQuery, QueuedQueryModel, QueuedQueryOrigin};
 use crate::search::slash_command_menu::static_commands::commands;
@@ -275,7 +275,7 @@ fn test_disabled_until_empty_buffer_reevaluates_when_slash_is_added_to_start() {
 }
 
 #[test]
-fn test_last_slash_in_buffer_is_the_trigger() {
+fn test_second_slash_in_command_token_sets_state_to_none() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -291,14 +291,29 @@ fn test_last_slash_in_buffer_is_the_trigger() {
             input.user_insert("/foo/bar", ctx);
         });
 
+        // A bootstrapped terminal has no CLI agent rich input, so the upstream rule applies:
+        // the trigger is the leading slash, and a second one inside the token voids the command.
         input.read(&app, |input, ctx| {
-            let state = input.slash_command_model.as_ref(ctx).state();
-            let SlashCommandEntryState::Composing { filter } = state else {
-                panic!("expected composing state, got {state:?}");
-            };
-            assert_eq!(filter.as_str(), "bar");
+            assert!(matches!(
+                input.slash_command_model.as_ref(ctx).state(),
+                SlashCommandEntryState::None
+            ));
         });
     });
+}
+
+#[test]
+fn test_slash_trigger_offset_keys_off_rich_input() {
+    // CLI agent rich input: a slash reaches it only as the menu keystroke, so the last one wins
+    // and whatever was typed before it is not part of the trigger span.
+    assert_eq!(slash_trigger_offset("foo /bar", true), Some(4));
+    assert_eq!(slash_trigger_offset("a / b / c", true), Some(6));
+    assert_eq!(slash_trigger_offset("no slash", true), None);
+
+    // Plain terminal input: only a leading slash opens the menu, which is what makes replacing
+    // the whole buffer safe there.
+    assert_eq!(slash_trigger_offset("foo /bar", false), None);
+    assert_eq!(slash_trigger_offset("/foo", false), Some(0));
 }
 
 #[test]

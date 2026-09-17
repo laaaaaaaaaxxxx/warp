@@ -294,9 +294,7 @@ impl Input {
                 );
             }
             SlashCommandSelectionBehavior::InsertCommandText(text) => {
-                self.editor.update(ctx, |editor, ctx| {
-                    editor.set_buffer_text(&text, ctx);
-                });
+                self.replace_slash_trigger(&text, ctx);
             }
         }
     }
@@ -438,10 +436,8 @@ impl Input {
                 );
             }
             SlashCommandsEvent::SelectedSkill { name, reference: _ } => {
-                // Insert /{skill-name} into the buffer
-                self.editor.update(ctx, |editor, ctx| {
-                    editor.set_buffer_text(format!("/{name} ").as_str(), ctx);
-                });
+                // Write /{skill-name} over the trigger slash
+                self.replace_slash_trigger(format!("/{name} ").as_str(), ctx);
                 self.close_slash_commands_menu(ctx);
             }
         }

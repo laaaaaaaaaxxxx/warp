@@ -8124,6 +8124,37 @@ impl Input {
     /// If `history_command` is `Some()` _and_ matches the contained workflow in `workflow_type`,
     /// `history_command` is inserted into the input instead, with its parameters highlighted and
     /// made editable via the shift-tab UX.
+    /// Byte range of the slash that opened the menu through the end of the buffer, or `None`
+    /// when this selection did not come from the slash menu. Whatever a selection writes goes
+    /// over this range, so text typed before the slash survives.
+    fn slash_trigger_span(&self, ctx: &mut ViewContext<Self>) -> Option<Range<usize>> {
+        let rich_input_open = self.slash_command_model.as_ref(ctx).is_rich_input_open(ctx);
+        self.suggestions_mode_model
+            .as_ref(ctx)
+            .is_slash_commands()
+            .then(|| self.editor.read(ctx, |editor, ctx| editor.buffer_text(ctx)))
+            .and_then(|text| slash_trigger_offset(&text, rich_input_open).map(|at| at..text.len()))
+    }
+
+    /// Writes `text` over the slash trigger span, falling back to replacing the whole buffer when
+    /// there is no trigger span. Upstream replaced the whole buffer unconditionally, which is only
+    /// safe while a leading slash is the sole way to open the menu.
+    pub(super) fn replace_slash_trigger(&mut self, text: &str, ctx: &mut ViewContext<Self>) {
+        let Some(span) = self.slash_trigger_span(ctx) else {
+            self.editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text(text, ctx);
+            });
+            return;
+        };
+        self.editor.update(ctx, |editor, ctx| {
+            editor.system_delete(
+                ByteOffset::from(span.start)..ByteOffset::from(span.end),
+                ctx,
+            );
+            editor.system_insert(text, PlainTextEditorViewAction::SystemInsert, ctx);
+        });
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn insert_workflow_into_input(
         &mut self,
@@ -8154,12 +8185,7 @@ impl Input {
         // As the first step, clear the existing buffer so that selecting a workflow
         // is effectively a buffer replacement (not append). When the slash menu is what opened
         // this selection, only the trigger span is replaced, so text typed before the slash stays.
-        let trigger_span = self
-            .suggestions_mode_model
-            .as_ref(ctx)
-            .is_slash_commands()
-            .then(|| self.editor.read(ctx, |editor, ctx| editor.buffer_text(ctx)))
-            .and_then(|text| slash_trigger_offset(&text).map(|at| at..text.len()));
+        let trigger_span = self.slash_trigger_span(ctx);
         self.editor.update(ctx, |editor, ctx| match &trigger_span {
             Some(span) => editor.system_delete(
                 ByteOffset::from(span.start)..ByteOffset::from(span.end),

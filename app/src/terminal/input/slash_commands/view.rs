@@ -66,6 +66,7 @@ pub struct InlineSlashCommandView {
     suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
     mixer: ModelHandle<SlashCommandMixer>,
     input_buffer_model: ModelHandle<InputBufferModel>,
+    slash_command_model: ModelHandle<SlashCommandModel>,
 }
 
 impl InlineSlashCommandView {
@@ -163,13 +164,18 @@ impl InlineSlashCommandView {
             mixer,
             suggestions_mode_model,
             input_buffer_model,
+            slash_command_model: slash_command_model.clone(),
         }
     }
 
     fn run_query_for_current_slash_filter(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(filter) = slash_trigger_slice(self.input_buffer_model.as_ref(ctx).current_value())
-            .and_then(|trigger| trigger.strip_prefix('/'))
-            .map(ToOwned::to_owned)
+        let rich_input_open = self.slash_command_model.as_ref(ctx).is_rich_input_open(ctx);
+        let Some(filter) = slash_trigger_slice(
+            self.input_buffer_model.as_ref(ctx).current_value(),
+            rich_input_open,
+        )
+        .and_then(|trigger| trigger.strip_prefix('/'))
+        .map(ToOwned::to_owned)
         else {
             return;
         };
