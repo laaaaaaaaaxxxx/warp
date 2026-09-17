@@ -12087,7 +12087,18 @@ impl TerminalView {
                 // case, we want the block to be focused because otherwise,
                 // users get stuck as they'd otherwise need to click into the
                 // box to respond to whether or not they want to update oh my zsh.
-                self.focus_terminal(ctx);
+                //
+                // Only when this pane is the one the person is in. A pane made
+                // in the background finishes bootstrapping a second after it is
+                // created, and taking the keyboard then pulls them out of
+                // whatever they were typing in.
+                let pane_is_focused = match self.focus_handle.as_ref() {
+                    Some(handle) => handle.is_focused(ctx),
+                    None => true,
+                };
+                if pane_is_focused {
+                    self.focus_terminal(ctx);
+                }
             }
             ModelEvent::AfterBlockStarted {
                 command,
