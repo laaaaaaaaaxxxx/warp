@@ -3987,6 +3987,45 @@ impl PaneGroup {
         new_pane_id
     }
 
+    /// Splits `base_pane_id` and leaves the cursor where it was.
+    ///
+    /// `add_terminal_pane` splits whatever pane has focus and hands focus to
+    /// the new one, which is right for a keystroke and wrong for a caller: on
+    /// the tab someone is looking at, it moves their hand. This names the pane
+    /// to split instead of focusing it first, and lands the new pane unfocused.
+    pub fn add_terminal_pane_in_background(
+        &mut self,
+        direction: Direction,
+        base_pane_id: PaneId,
+        ctx: &mut ViewContext<Self>,
+    ) -> TerminalPaneId {
+        // Same shell the keystroke path picks up.
+        let chosen_shell = match self.active_session_terminal_model(ctx) {
+            Some(model) => {
+                let model = model.lock();
+                model.shell_launch_state().available_shell()
+            }
+            _ => None,
+        };
+        // Same fallback `insert_terminal_pane` uses: the named pane's own
+        // session when it has one, the group's active session otherwise.
+        let base_session_id = base_pane_id
+            .as_terminal_pane_id()
+            .or(self.active_session_id(ctx));
+        let new_pane_id = self.add_session_with_focus(
+            direction,
+            Some(base_pane_id),
+            base_session_id,
+            chosen_shell,
+            None, /* conversation_restoration */
+            DefaultSessionModeBehavior::Apply,
+            false,
+            ctx,
+        );
+        ctx.emit(Event::AppStateChanged);
+        new_pane_id
+    }
+
     /// Adds a terminal split pane without applying the user's default session mode.
     pub fn add_terminal_pane_ignoring_default_session_mode(
         &mut self,
@@ -5330,6 +5369,32 @@ impl PaneGroup {
         );
     }
 
+    /// Seats a pane that `remove_pane_for_move` took out of another group.
+    ///
+    /// Unlike the drag path this lands the pane visible in one step and leaves
+    /// focus alone: a control-plane move names a background target, it does not
+    /// travel there. `base_pane_id` of `None` splits the whole tree, so the
+    /// pane arrives on one side of everything already in the group.
+    pub fn add_pane_for_move(
+        &mut self,
+        pane: Box<dyn AnyPaneContent>,
+        base_pane_id: Option<PaneId>,
+        direction: Direction,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<PaneId> {
+        self.add_pane_with_options(
+            pane,
+            AddPaneOptions {
+                direction,
+                base_pane_id,
+                focus_new_pane: false,
+                visibility: NewPaneVisibility::Visible,
+                emit_app_state_changed: true,
+            },
+            ctx,
+        )
+    }
+
     /// We return a pane_id if the pane successfully attached
     /// Otherwise, we return None
     pub fn add_pane_for_replacement<C: PaneContent>(
@@ -6636,6 +6701,30 @@ impl PaneGroup {
         default_session_mode_behavior: DefaultSessionModeBehavior,
         ctx: &mut ViewContext<Self>,
     ) -> TerminalPaneId {
+        self.add_session_with_focus(
+            direction,
+            base_pane_id_for_split,
+            base_pane_id_for_context,
+            chosen_shell,
+            conversation_restoration,
+            default_session_mode_behavior,
+            true,
+            ctx,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_session_with_focus(
+        &mut self,
+        direction: Direction,
+        base_pane_id_for_split: Option<PaneId>,
+        base_pane_id_for_context: Option<TerminalPaneId>,
+        chosen_shell: Option<AvailableShell>,
+        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+        default_session_mode_behavior: DefaultSessionModeBehavior,
+        focus_new_pane: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> TerminalPaneId {
         // If restoring a conversation, use its startup working directory if it exists.
         // For forks this is the conversation's latest working directory so the
         // fork continues where the source conversation left off.
@@ -6691,13 +6780,14 @@ impl PaneGroup {
             Some((shell, _)) => Some(shell.clone()),
             None => chosen_shell,
         };
-        let new_pane_id = self.add_session_in_directory(
+        let new_pane_id = self.add_session_in_directory_with_focus(
             direction,
             base_pane_id_for_split,
             chosen_shell,
             startup_directory,
             conversation_restoration,
             default_session_mode_behavior,
+            focus_new_pane,
             ctx,
         );
         if let Some(terminal_view) = self.terminal_view_from_pane_id(new_pane_id, ctx) {
@@ -6776,6 +6866,7 @@ impl PaneGroup {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn add_session_in_directory(
         &mut self,
         direction: Direction,
@@ -6784,6 +6875,33 @@ impl PaneGroup {
         startup_directory: Option<PathBuf>,
         conversation_restoration: Option<ConversationRestorationInNewPaneType>,
         default_session_mode_behavior: DefaultSessionModeBehavior,
+        ctx: &mut ViewContext<Self>,
+    ) -> TerminalPaneId {
+        self.add_session_in_directory_with_focus(
+            direction,
+            base_pane_id,
+            chosen_shell,
+            startup_directory,
+            conversation_restoration,
+            default_session_mode_behavior,
+            true,
+            ctx,
+        )
+    }
+
+    /// Body of `add_session_in_directory`, plus whether the new pane takes the
+    /// cursor. Splitting the tab someone is looking at moves their hand unless
+    /// this is false.
+    #[allow(clippy::too_many_arguments)]
+    fn add_session_in_directory_with_focus(
+        &mut self,
+        direction: Direction,
+        base_pane_id: Option<PaneId>,
+        chosen_shell: Option<AvailableShell>,
+        startup_directory: Option<PathBuf>,
+        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+        default_session_mode_behavior: DefaultSessionModeBehavior,
+        focus_new_pane: bool,
         ctx: &mut ViewContext<Self>,
     ) -> TerminalPaneId {
         let should_immediately_enter_agent_view = matches!(
@@ -6802,7 +6920,13 @@ impl PaneGroup {
         );
         let new_pane_id = pane_data.terminal_pane_id();
 
-        let _ = self.add_pane(direction, base_pane_id, Box::new(pane_data), true, ctx);
+        let _ = self.add_pane(
+            direction,
+            base_pane_id,
+            Box::new(pane_data),
+            focus_new_pane,
+            ctx,
+        );
 
         // Enter agent view if default session mode is Agent and AI is enabled
         if should_immediately_enter_agent_view {

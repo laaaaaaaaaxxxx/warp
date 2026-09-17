@@ -7391,7 +7391,12 @@ impl Workspace {
     ///   remaining member so the old group stays contiguous.
     /// * If the tab was effectively pinned, clamp past the pinned region so
     ///   the new (unpinned) group doesn't land inside the pinned area.
-    fn new_tab_group_from_tab(&mut self, tab_index: usize, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn new_tab_group_from_tab(
+        &mut self,
+        tab_index: usize,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) {
         if !FeatureFlag::GroupedTabs.is_enabled() {
             return;
         }
@@ -7422,11 +7427,13 @@ impl Workspace {
         self.move_tab_to_index(tab_index, target, ctx);
 
         // The move above may have shifted the tab; the new group has exactly
-        // one member, so its position is the new active index.
-        let new_active = group_member_indices(&self.tabs, group_id)
-            .next()
-            .unwrap_or(tab_index);
-        self.set_active_tab_index(new_active, ctx);
+        // one member, so its position is where the tab now sits.
+        if activate {
+            let new_active = group_member_indices(&self.tabs, group_id)
+                .next()
+                .unwrap_or(tab_index);
+            self.set_active_tab_index(new_active, ctx);
+        }
 
         if let Some(prev_group_id) = previous_group_id {
             self.prune_empty_tab_group(prev_group_id, ctx);
@@ -7555,37 +7562,49 @@ impl Workspace {
     /// already places it right after the active tab; in every other case the new
     /// tab is created top-level (or in another group), so we pull it to the end
     /// of this group's run.
-    fn new_tab_in_group(&mut self, group_id: TabGroupId, ctx: &mut ViewContext<Self>) {
+    pub(crate) fn new_tab_in_group(
+        &mut self,
+        group_id: TabGroupId,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> Option<usize> {
         if !FeatureFlag::GroupedTabs.is_enabled() || !self.tab_groups.contains_key(&group_id) {
-            return;
+            return None;
         }
 
-        // Creating the tab honors the default session mode and becomes active.
-        self.add_new_session_tab_with_default_mode(
+        // Creating the tab honors the default session mode.
+        let new_idx = self.add_new_session_tab_with_default_mode_and_activation(
             NewSessionSource::Tab,
             Some(ctx.window_id()),
             None,
             None,
             false,
+            activate,
             ctx,
         );
 
         // If the creation path already dropped the new tab into this group
         // (`AfterCurrentTab` with a member active), it's correctly placed right
-        // after the active tab. Otherwise pull it to the end of the group's run.
-        let new_idx = self.active_tab_index;
+        // after the tab it was opened from. Otherwise pull it to the end of the
+        // group's run.
         let already_in_group = self
             .tabs
             .get(new_idx)
             .is_some_and(|tab| tab.group_id == Some(group_id));
-        if !already_in_group {
+        let final_idx = if already_in_group {
+            new_idx
+        } else {
             let target_index = self.index_after_group(group_id).unwrap_or(self.tabs.len());
             if let Some(tab) = self.tabs.get_mut(new_idx) {
                 tab.group_id = Some(group_id);
             }
             self.move_tab_to_index(new_idx, target_index, ctx);
-        }
+            group_member_indices(&self.tabs, group_id)
+                .last()
+                .unwrap_or(new_idx)
+        };
         self.expand_tab_group(group_id, ctx);
+        Some(final_idx)
     }
 
     /// True when the user-initiated reorder of `group_id` in `direction`
@@ -8770,8 +8789,9 @@ impl Workspace {
         &mut self,
         directory: Option<String>,
         remote_host: Option<&str>,
+        activate: bool,
         ctx: &mut ViewContext<Self>,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let mut options = NewTerminalOptions::default();
         let mut attached_session_id = None;
         match remote_host {
@@ -8803,16 +8823,17 @@ impl Workspace {
                 attached_session_id = Some(session_id);
             }
         }
-        self.add_tab_with_pane_layout(
+        let new_tab_index = self.add_tab_with_pane_layout_with_activation(
             PanesLayout::SingleTerminal(Box::new(options)),
             Arc::new(HashMap::new()),
             None,
+            activate,
             ctx,
         );
         // The pane announces the session it carries: the hook comes up the
         // channel from the far end, and hooks for undeclared ids are dropped.
         if let Some(session_id) = attached_session_id
-            && let Some(pane_group) = self.get_pane_group_view(self.active_tab_index())
+            && let Some(pane_group) = self.get_pane_group_view(new_tab_index)
         {
             let focused_pane_id = pane_group.as_ref(ctx).focused_pane_id(ctx);
             if let Some(terminal_view) = pane_group
@@ -8822,7 +8843,7 @@ impl Workspace {
                 terminal_view.as_ref(ctx).register_session_id(session_id);
             }
         }
-        Ok(())
+        Ok(new_tab_index)
     }
 
     fn open_directory_in_new_tab(&mut self, path: PathBuf, ctx: &mut ViewContext<Self>) {
@@ -12628,6 +12649,27 @@ impl Workspace {
         ctx.notify();
     }
 
+    /// `add_terminal_tab` for a caller that must not be moved off the tab it is
+    /// on. Returns where the new tab landed.
+    pub(crate) fn add_terminal_tab_with_activation(
+        &mut self,
+        hide_homepage: bool,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
+        let index = self.add_new_session_tab_with_default_mode_and_activation(
+            NewSessionSource::Tab,
+            Some(ctx.window_id()),
+            None,
+            None,
+            hide_homepage,
+            activate,
+            ctx,
+        );
+        ctx.notify();
+        index
+    }
+
     fn add_get_started_tab(&mut self, ctx: &mut ViewContext<Self>) {
         self.add_tab_with_pane_layout(
             PanesLayout::Snapshot(Box::new(PaneNodeSnapshot::Leaf(LeafSnapshot {
@@ -12742,15 +12784,40 @@ impl Workspace {
         hide_homepage: bool,
         ctx: &mut ViewContext<Self>,
     ) {
-        self.add_new_session_tab_internal_with_default_session_mode_behavior(
+        self.add_new_session_tab_with_default_mode_and_activation(
+            new_session_source,
+            previous_session_window_id,
+            chosen_shell,
+            conversation_restoration,
+            hide_homepage,
+            true,
+            ctx,
+        );
+    }
+
+    /// `add_new_session_tab_with_default_mode` that can leave the foreground
+    /// alone. Returns the index of the tab it made.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_new_session_tab_with_default_mode_and_activation(
+        &mut self,
+        new_session_source: NewSessionSource,
+        previous_session_window_id: Option<WindowId>,
+        chosen_shell: Option<AvailableShell>,
+        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+        hide_homepage: bool,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
+        self.add_new_session_tab_internal_with_activation(
             new_session_source,
             previous_session_window_id,
             chosen_shell,
             conversation_restoration,
             hide_homepage,
             DefaultSessionModeBehavior::Apply,
+            activate,
             ctx,
-        );
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -12764,6 +12831,30 @@ impl Workspace {
         default_session_mode_behavior: DefaultSessionModeBehavior,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.add_new_session_tab_internal_with_activation(
+            new_session_source,
+            previous_session_window_id,
+            chosen_shell,
+            conversation_restoration,
+            hide_homepage,
+            default_session_mode_behavior,
+            true,
+            ctx,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn add_new_session_tab_internal_with_activation(
+        &mut self,
+        new_session_source: NewSessionSource,
+        previous_session_window_id: Option<WindowId>,
+        chosen_shell: Option<AvailableShell>,
+        conversation_restoration: Option<ConversationRestorationInNewPaneType>,
+        hide_homepage: bool,
+        default_session_mode_behavior: DefaultSessionModeBehavior,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
         // Check if we should default to agent mode (only for new sessions, not restorations)
         let should_enter_agent_view = matches!(
             default_session_mode_behavior,
@@ -12798,7 +12889,7 @@ impl Workspace {
             )
         });
 
-        self.add_tab_with_pane_layout(
+        let new_tab_index = self.add_tab_with_pane_layout_with_activation(
             PanesLayout::SingleTerminal(Box::new(NewTerminalOptions {
                 shell: chosen_shell,
                 initial_directory: startup_directory,
@@ -12808,16 +12899,17 @@ impl Workspace {
             })),
             Arc::new(HashMap::new()),
             None, /*custom_tab_title*/
+            activate,
             ctx,
         );
+        // Everything below works on the tab that was just made. It is the
+        // active one only when this call took the foreground, so address it by
+        // the index the insert reported.
+        let new_tab_pane_group = self.tabs[new_tab_index].pane_group.clone();
 
         #[cfg(all(feature = "local_tty", not(target_family = "wasm")))]
         if is_docker_sandbox {
-            match self
-                .active_tab_pane_group()
-                .as_ref(ctx)
-                .active_session_view(ctx)
-            {
+            match new_tab_pane_group.as_ref(ctx).active_session_view(ctx) {
                 Some(terminal_view) => {
                     TerminalView::initialize_docker_sandbox_environment(&terminal_view, ctx);
                 }
@@ -12832,15 +12924,21 @@ impl Workspace {
         let _ = is_docker_sandbox;
         // If the default session mode is Agent and AI is enabled, enter agent view
         if should_enter_agent_view {
-            self.enter_agent_view_on_active_tab(ctx);
+            self.enter_agent_view_on_tab(&new_tab_pane_group, ctx);
         }
+
+        new_tab_index
     }
 
-    /// Enters agent view with a new conversation on the active tab's terminal.
+    /// Enters agent view with a new conversation on that tab's terminal.
     ///
     /// Used after adding a new tab when the session mode should default to agent view.
-    fn enter_agent_view_on_active_tab(&self, ctx: &mut ViewContext<Self>) {
-        self.active_tab_pane_group().update(ctx, |pane_group, ctx| {
+    fn enter_agent_view_on_tab(
+        &self,
+        tab_pane_group: &ViewHandle<PaneGroup>,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        tab_pane_group.update(ctx, |pane_group, ctx| {
             if let Some(terminal_view) = pane_group.active_session_view(ctx) {
                 terminal_view.update(ctx, |view, ctx| {
                     view.enter_agent_view_for_new_conversation(
@@ -12894,6 +12992,26 @@ impl Workspace {
         custom_tab_title: Option<String>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.add_tab_with_pane_layout_with_activation(
+            panes_layout,
+            block_lists,
+            custom_tab_title,
+            true,
+            ctx,
+        );
+    }
+
+    /// Body of `add_tab_with_pane_layout`. With `activate` false the caller
+    /// stays on the tab it was showing, so the returned index -- not the active
+    /// one -- is what names the tab that was just made.
+    pub(crate) fn add_tab_with_pane_layout_with_activation(
+        &mut self,
+        panes_layout: PanesLayout,
+        block_lists: Arc<HashMap<PaneUuid, Vec<SerializedBlockListItem>>>,
+        custom_tab_title: Option<String>,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
         // Remember whether the left panel was open on the current active pane group
         // before creating a new active pane group.
         let left_panel_was_open = if self.tabs.is_empty() {
@@ -12942,12 +13060,13 @@ impl Workspace {
         self.tabs.insert(insert_idx, TabData::new(new_pane_group));
         self.tab_mru_order
             .push(self.tabs[insert_idx].pane_group.id());
-        self.activate_tab_internal(insert_idx, ctx);
+        if activate {
+            self.activate_tab_internal(insert_idx, ctx);
+        }
 
         // Inherit the active tab's group membership (skipped for top-level tabs).
         if let Some(group_id) = inherited_group_id {
-            let new_idx = self.active_tab_index;
-            if let Some(new_tab) = self.tabs.get_mut(new_idx) {
+            if let Some(new_tab) = self.tabs.get_mut(insert_idx) {
                 new_tab.group_id = Some(group_id);
             }
             self.expand_tab_group(group_id, ctx);
@@ -12957,7 +13076,7 @@ impl Workspace {
             if *TabSettings::as_ref(ctx).preserve_active_tab_color.value()
                 && let Some(SelectedTabColor::Color(color)) = active_tab_selected_color
             {
-                self.tabs[self.active_tab_index].selected_color = SelectedTabColor::Color(color);
+                self.tabs[insert_idx].selected_color = SelectedTabColor::Color(color);
             }
 
             // preserve the current tab's default directory color when the new tab inherits the working directory
@@ -12969,7 +13088,7 @@ impl Workspace {
                     || wd_config.config_for_source(NewSessionSource::Window).mode
                         == WorkingDirectoryMode::PreviousDir;
                 if inherits_cwd && let Some(color) = active_tab_default_color {
-                    self.tabs[self.active_tab_index].default_directory_color = Some(color);
+                    self.tabs[insert_idx].default_directory_color = Some(color);
                 }
             }
         }
@@ -12980,10 +13099,13 @@ impl Workspace {
             && !is_restoration
             && left_panel_was_open
         {
-            self.active_tab_pane_group().update(ctx, |pg, ctx| {
+            let new_tab_pane_group = self.tabs[insert_idx].pane_group.clone();
+            new_tab_pane_group.update(ctx, |pg, ctx| {
                 pg.set_left_panel_open(true, ctx);
             });
         }
+
+        insert_idx
     }
 
     pub fn add_tab_from_existing_pane(
@@ -12993,6 +13115,19 @@ impl Workspace {
         group_id: Option<TabGroupId>,
         ctx: &mut ViewContext<Self>,
     ) {
+        self.add_tab_from_existing_pane_with_activation(pane, new_idx, group_id, true, ctx);
+    }
+
+    /// Body of `add_tab_from_existing_pane`, plus the choice of whether the new
+    /// tab takes the foreground. Returns where the tab landed.
+    pub(crate) fn add_tab_from_existing_pane_with_activation(
+        &mut self,
+        pane: Box<dyn AnyPaneContent>,
+        new_idx: usize,
+        group_id: Option<TabGroupId>,
+        activate: bool,
+        ctx: &mut ViewContext<Self>,
+    ) -> usize {
         let new_pane_group = ctx.add_typed_action_view(|ctx| {
             PaneGroup::new_from_existing_pane(
                 pane,
@@ -13008,25 +13143,29 @@ impl Workspace {
             me.handle_file_tree_event(pane_group, event, ctx)
         });
 
-        if self.tab_count() == 0 {
+        let inserted_idx = if self.tab_count() == 0 {
             self.tabs.push(TabData::new(new_pane_group));
             self.tab_mru_order
                 .push(self.tabs.last().unwrap().pane_group.id());
-            self.activate_tab_internal(self.tab_count() - 1, ctx);
+            self.tab_count() - 1
         } else {
             self.tabs.insert(new_idx, TabData::new(new_pane_group));
             self.tab_mru_order.push(self.tabs[new_idx].pane_group.id());
-            self.activate_tab_internal(new_idx, ctx);
+            new_idx
+        };
+        if activate {
+            self.activate_tab_internal(inserted_idx, ctx);
         }
 
-        // Join the active tab's group when one exists.
+        // Join the group the new tab was told to land in, when there is one.
         if let Some(group_id) = group_id {
-            let inserted_idx = self.active_tab_index;
             if let Some(new_tab) = self.tabs.get_mut(inserted_idx) {
                 new_tab.group_id = Some(group_id);
             }
             self.expand_tab_group(group_id, ctx);
         }
+
+        inserted_idx
     }
 
     pub fn add_tab_for_cloud_notebook(
@@ -24062,7 +24201,7 @@ impl TypedActionView for Workspace {
                 self.cancel_pane_rename(ctx);
                 self.cancel_tab_group_rename(ctx);
             }
-            NewTabGroupFromTab(tab_index) => self.new_tab_group_from_tab(*tab_index, ctx),
+            NewTabGroupFromTab(tab_index) => self.new_tab_group_from_tab(*tab_index, true, ctx),
             MoveTabToGroup {
                 tab_index,
                 group_id,
@@ -24086,7 +24225,9 @@ impl TypedActionView for Workspace {
                 self.toggle_tab_group_right_click_menu(*group_id, *anchor, ctx)
             }
             UngroupTabs(group_id) => self.ungroup_tabs(*group_id, ctx),
-            NewTabInGroup(group_id) => self.new_tab_in_group(*group_id, ctx),
+            NewTabInGroup(group_id) => {
+                self.new_tab_in_group(*group_id, true, ctx);
+            }
             MoveTabGroupUp(group_id) => self.move_tab_group(*group_id, TabMovement::Left, ctx),
             MoveTabGroupDown(group_id) => self.move_tab_group(*group_id, TabMovement::Right, ctx),
             CloseTabsOutsideGroup(group_id) => self.close_tabs_outside_group(*group_id, ctx),
