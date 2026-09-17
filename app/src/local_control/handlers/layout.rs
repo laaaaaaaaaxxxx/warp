@@ -48,25 +48,49 @@ pub(crate) fn create_tab(
     let action = tab_create_action(params)?;
     let directory = decoded.directory.clone();
     let remote_host = decoded.remote_host.clone();
+    let background = decoded.background;
+    let tab_type = decoded.tab_type;
     let (tab_id, previous_tab_count, tab_count, active_tab_index) =
         workspace.update(ctx, |workspace, ctx| {
             let previous_tab_count = workspace.tab_count();
             // A directory (or a host) makes this a placed tab: the shell has to
             // start there, which the plain add-tab action cannot express.
-            if directory.is_some() || remote_host.is_some() {
+            let new_tab_index = if directory.is_some() || remote_host.is_some() {
                 workspace
-                    .add_terminal_tab_in_directory(directory, remote_host.as_deref(), ctx)
-                    .map_err(|message| ControlError::new(ErrorCode::InvalidParams, message))?;
+                    .add_terminal_tab_in_directory(
+                        directory,
+                        remote_host.as_deref(),
+                        !background,
+                        ctx,
+                    )
+                    .map_err(|message| ControlError::new(ErrorCode::InvalidParams, message))?
+            } else if background {
+                // The plain add-tab action reports its tab by making it active,
+                // so background creation cannot go through it. Only the
+                // terminal path has a form that both skips activation and says
+                // where the tab landed.
+                match tab_type {
+                    None | Some(TabType::Terminal) => {
+                        workspace.add_terminal_tab_with_activation(false, false, ctx)
+                    }
+                    Some(_) => {
+                        return Err(ControlError::new(
+                            ErrorCode::UnsupportedAction,
+                            "tab.create in the background only supports terminal tabs",
+                        ));
+                    }
+                }
             } else {
                 workspace.handle_action(&action, ctx);
-            }
+                workspace.active_tab_index()
+            };
             let tab_id = workspace
-                .get_pane_group_view(workspace.active_tab_index())
+                .get_pane_group_view(new_tab_index)
                 .map(|tab| tab.id().to_string())
                 .ok_or_else(|| {
                     ControlError::new(
                         ErrorCode::Internal,
-                        "tab.create did not produce an active tab identifier",
+                        "tab.create did not produce a tab identifier",
                     )
                 })?;
             Ok((

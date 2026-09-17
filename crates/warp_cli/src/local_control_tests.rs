@@ -367,6 +367,31 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             ActionKind::PaneSplit,
             vec!["warpctrl", "pane", "split", "--direction", "right"],
         ),
+        (
+            ActionKind::PaneMove,
+            vec!["warpctrl", "pane", "move", "--dest-tab", "7023"],
+        ),
+        (
+            ActionKind::CodeLspEnable,
+            vec![
+                "warpctrl",
+                "code",
+                "lsp",
+                "enable",
+                "--workspace",
+                "/root/project/warp",
+                "--server",
+                "rust-analyzer",
+            ],
+        ),
+        (
+            ActionKind::CodeNavigateBack,
+            vec!["warpctrl", "code", "navigate", "back"],
+        ),
+        (
+            ActionKind::CodeNavigateForward,
+            vec!["warpctrl", "code", "navigate", "forward"],
+        ),
         (ActionKind::PaneFocus, vec!["warpctrl", "pane", "focus"]),
         (
             ActionKind::PaneNavigate,
@@ -407,6 +432,26 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
         (
             ActionKind::TabGroupCloseAbove,
             vec!["warpctrl", "tab", "group", "close-above"],
+        ),
+        (
+            ActionKind::TabGroupNewTab,
+            vec!["warpctrl", "tab", "group", "new-tab"],
+        ),
+        (
+            ActionKind::TabGroupUngroup,
+            vec!["warpctrl", "tab", "group", "ungroup"],
+        ),
+        (
+            ActionKind::TabGroupRemoveTab,
+            vec!["warpctrl", "tab", "group", "remove-tab"],
+        ),
+        (
+            ActionKind::TabGroupMoveTab,
+            vec!["warpctrl", "tab", "group", "move-tab", "--dest-tab", "7023"],
+        ),
+        (
+            ActionKind::TabGroupMove,
+            vec!["warpctrl", "tab", "group", "move", "--direction", "down"],
         ),
         (ActionKind::PaneClose, vec!["warpctrl", "pane", "close"]),
         (
@@ -671,7 +716,12 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             },
             TabCommand::Group(command) => match command {
                 TabGroupCommand::Create(_) => Some(ActionKind::TabGroupCreate),
+                TabGroupCommand::NewTab(_) => Some(ActionKind::TabGroupNewTab),
                 TabGroupCommand::Rename(_) => Some(ActionKind::TabGroupRename),
+                TabGroupCommand::Ungroup(_) => Some(ActionKind::TabGroupUngroup),
+                TabGroupCommand::RemoveTab(_) => Some(ActionKind::TabGroupRemoveTab),
+                TabGroupCommand::MoveTab(_) => Some(ActionKind::TabGroupMoveTab),
+                TabGroupCommand::Move(_) => Some(ActionKind::TabGroupMove),
                 TabGroupCommand::Close(_) => Some(ActionKind::TabGroupClose),
                 TabGroupCommand::CloseAbove(_) => Some(ActionKind::TabGroupCloseAbove),
             },
@@ -680,6 +730,7 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             PaneCommand::List(_) => Some(ActionKind::PaneList),
             PaneCommand::Inspect(_) => Some(ActionKind::PaneInspect),
             PaneCommand::Split(_) => Some(ActionKind::PaneSplit),
+            PaneCommand::Move(_) => Some(ActionKind::PaneMove),
             PaneCommand::Focus(_) => Some(ActionKind::PaneFocus),
             PaneCommand::Navigate(_) => Some(ActionKind::PaneNavigate),
             PaneCommand::Resize(_) => Some(ActionKind::PaneResize),
@@ -739,6 +790,14 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             crate::local_control::CodeCommand::Lsp(command) => match command {
                 crate::local_control::CodeLspCommand::Enable(_) => {
                     Some(ActionKind::CodeLspEnable)
+                }
+            },
+            crate::local_control::CodeCommand::Navigate(command) => match command {
+                crate::local_control::CodeNavigateCommand::Back(_) => {
+                    Some(ActionKind::CodeNavigateBack)
+                }
+                crate::local_control::CodeNavigateCommand::Forward(_) => {
+                    Some(ActionKind::CodeNavigateForward)
                 }
             },
         },

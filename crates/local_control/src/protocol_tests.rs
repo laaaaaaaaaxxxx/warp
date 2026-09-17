@@ -29,6 +29,7 @@ fn strict_params_serialize_without_synthetic_discriminators() {
             tab_type: Some(TabType::Agent),
             directory: None,
             remote_host: None,
+            background: false,
         },
     )
     .expect("tab.create params serialize");
@@ -164,8 +165,8 @@ fn malformed_and_removed_action_names_are_not_deserialized() {
 }
 
 #[test]
-fn catalog_has_exactly_96_retained_actions() {
-    assert_eq!(ActionKind::ALL.len(), 96);
+fn catalog_has_exactly_105_retained_actions() {
+    assert_eq!(ActionKind::ALL.len(), 105);
 }
 
 #[test]

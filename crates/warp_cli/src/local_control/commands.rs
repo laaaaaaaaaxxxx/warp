@@ -1,12 +1,13 @@
 //! Implementations for user-facing `warpctrl` command groups.
 use local_control::discovery::InstanceRecord;
 use local_control::protocol::{
-    Action, ActionKind, ActionNameParams, BindingNameParams, BooleanValueParams, ColorValueParams,
-    ControlError, DirectionParams, EmptyParams, ErrorCode, FileOpenParams, KeyParams,
-    KeyValueParams, LspEnableParams, PageQueryParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
+    Action, ActionKind, ActionNameParams, BackgroundParams, BindingNameParams, BooleanValueParams,
+    ColorValueParams, ControlError, DirectionParams, EmptyParams, ErrorCode, FileOpenParams,
+    KeyParams, KeyValueParams, LspEnableParams, PageQueryParams, PaneMoveDestination,
+    PaneMoveParams, PaneSplitParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
     RightPanelResizeParams, SelectionRange, SelectionRangesParams, SettingListParams,
     TabActivateParams, TabActivationMode, TabCloseMode, TabCloseParams, TabCreateParams,
-    TextParams, ThemeNameParams,
+    TabGroupMoveParams, TabSelector, TextParams, ThemeNameParams,
 };
 use local_control::selection::select_instance;
 use serde::Serialize;
@@ -362,6 +363,9 @@ pub(super) fn run_window_command(
                 tab_type: args.tab_type.map(Into::into),
                 directory: None,
                 remote_host: None,
+                // A window is not a tab in some other window, so it has no
+                // background form; the app side rejects it if one is asked for.
+                background: false,
             },
             output_format,
         ),
@@ -392,6 +396,7 @@ pub(super) fn run_tab_command(
                 tab_type: args.tab_type.map(Into::into),
                 directory: args.directory,
                 remote_host: args.remote_host,
+                background: args.background,
             },
             output_format,
         ),
@@ -429,9 +434,44 @@ pub(super) fn run_tab_command(
         ),
         TabCommand::ResetName(args) => run_action(args, ActionKind::TabResetName, output_format),
         TabCommand::Group(command) => match command {
-            TabGroupCommand::Create(args) => {
-                run_action(args, ActionKind::TabGroupCreate, output_format)
+            TabGroupCommand::Create(args) => run_action_with_params(
+                args.target,
+                ActionKind::TabGroupCreate,
+                BackgroundParams {
+                    background: args.background,
+                },
+                output_format,
+            ),
+            TabGroupCommand::NewTab(args) => run_action_with_params(
+                args.target,
+                ActionKind::TabGroupNewTab,
+                BackgroundParams {
+                    background: args.background,
+                },
+                output_format,
+            ),
+            TabGroupCommand::Ungroup(args) => {
+                run_action(args, ActionKind::TabGroupUngroup, output_format)
             }
+            TabGroupCommand::RemoveTab(args) => {
+                run_action(args, ActionKind::TabGroupRemoveTab, output_format)
+            }
+            TabGroupCommand::Move(args) => run_action_with_params(
+                args.target,
+                ActionKind::TabGroupMove,
+                DirectionParams {
+                    direction: args.direction.into(),
+                },
+                output_format,
+            ),
+            TabGroupCommand::MoveTab(args) => run_action_with_params(
+                args.target,
+                ActionKind::TabGroupMoveTab,
+                TabGroupMoveParams {
+                    destination_tab: TabSelector(args.dest_tab),
+                },
+                output_format,
+            ),
             TabGroupCommand::Rename(args) => run_action_with_params(
                 args.target,
                 ActionKind::TabGroupRename,
@@ -473,11 +513,29 @@ pub(super) fn run_pane_command(
         PaneCommand::Split(args) => run_action_with_params(
             args.target,
             ActionKind::PaneSplit,
-            DirectionParams {
+            PaneSplitParams {
                 direction: args.direction.into(),
+                background: args.background,
             },
             output_format,
         ),
+        PaneCommand::Move(args) => {
+            let destination = match args.dest_tab {
+                Some(tab) => PaneMoveDestination::Tab {
+                    tab: TabSelector(tab),
+                },
+                None => PaneMoveDestination::NewTab,
+            };
+            run_action_with_params(
+                args.target,
+                ActionKind::PaneMove,
+                PaneMoveParams {
+                    destination,
+                    direction: args.direction.map(Into::into),
+                },
+                output_format,
+            )
+        }
         PaneCommand::Focus(args) => {
             run_action_with_params(args, ActionKind::PaneFocus, EmptyParams {}, output_format)
         }

@@ -321,10 +321,25 @@ pub enum TabCommand {
 #[derive(Debug, Clone, Subcommand)]
 pub enum TabGroupCommand {
     /// Put the target tab into a new tab group.
-    Create(TargetArgs),
+    Create(TabGroupBackgroundArgs),
+
+    /// Open a new tab inside the group the target tab belongs to.
+    NewTab(TabGroupBackgroundArgs),
 
     /// Rename the group the target tab belongs to.
     Rename(RenameArgs),
+
+    /// Dissolve the group the target tab belongs to, keeping its tabs.
+    Ungroup(TargetArgs),
+
+    /// Take the target tab out of the group it belongs to.
+    RemoveTab(TargetArgs),
+
+    /// Move the target tab into the destination tab's group.
+    MoveTab(TabGroupMoveArgs),
+
+    /// Move the whole group the target tab belongs to, one slot up or down.
+    Move(TabGroupReorderArgs),
 
     /// Close every tab in the group the target tab belongs to.
     Close(TargetArgs),
@@ -354,6 +369,9 @@ pub enum PaneCommand {
 
     /// Split the active pane.
     Split(PaneSplitArgs),
+
+    /// Move a pane into another tab.
+    Move(PaneMoveArgs),
 
     /// Focus a pane.
     Focus(TargetArgs),
@@ -731,6 +749,10 @@ pub struct TabCreateArgs {
     #[arg(long = "remote-host")]
     pub remote_host: Option<String>,
 
+    /// Create the tab without switching to it.
+    #[arg(long = "background")]
+    pub background: bool,
+
     #[command(flatten)]
     pub target: TargetArgs,
 }
@@ -781,6 +803,64 @@ pub struct PaneSplitArgs {
 
     #[arg(long = "direction", value_enum)]
     pub direction: CliCardinalDirection,
+
+    /// Split without moving the cursor into the new pane.
+    #[arg(long = "background")]
+    pub background: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct PaneMoveArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Tab the pane moves into, as `tab list` reports its id.
+    #[arg(
+        long = "dest-tab",
+        required_unless_present = "dest_new_tab",
+        conflicts_with = "dest_new_tab"
+    )]
+    pub dest_tab: Option<String>,
+
+    /// Give the pane a tab of its own, next to the one it came from.
+    #[arg(long = "dest-new-tab")]
+    pub dest_new_tab: bool,
+
+    /// Side of the destination tab's existing panes to land on. Defaults to
+    /// right; unused with --dest-new-tab.
+    #[arg(long = "direction", value_enum)]
+    pub direction: Option<CliCardinalDirection>,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TabGroupBackgroundArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Do it without switching to the affected tab.
+    #[arg(long = "background")]
+    pub background: bool,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TabGroupReorderArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Which way the group moves in the tab strip.
+    #[arg(long = "direction", value_enum)]
+    pub direction: CliGroupMoveDirection,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct TabGroupMoveArgs {
+    #[command(flatten)]
+    pub target: TargetArgs,
+
+    /// Any tab already in the destination group. Groups are named by a member
+    /// because their ids are minted afresh on every restart.
+    #[arg(long = "dest-tab")]
+    pub dest_tab: String,
 }
 
 #[derive(Debug, Clone, Args)]
@@ -1023,6 +1103,21 @@ impl From<CliDirection> for local_control::protocol::Direction {
             CliDirection::Down => Self::Down,
             CliDirection::Previous => Self::Previous,
             CliDirection::Next => Self::Next,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CliGroupMoveDirection {
+    Up,
+    Down,
+}
+
+impl From<CliGroupMoveDirection> for local_control::protocol::Direction {
+    fn from(value: CliGroupMoveDirection) -> Self {
+        match value {
+            CliGroupMoveDirection::Up => Self::Up,
+            CliGroupMoveDirection::Down => Self::Down,
         }
     }
 }

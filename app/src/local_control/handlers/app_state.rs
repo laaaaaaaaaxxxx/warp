@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 
 use ::local_control::protocol::{
     Axis as ControlAxis, Direction as ControlDirection, DirectionParams, FileOpenParams,
-    LspEnableParams, PageQueryParams, QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams,
-    TabActivationMode, TabCreateParams, TabTarget, TabType, TargetSelector, TextParams,
+    LspEnableParams, PageQueryParams, PaneMoveDestination, PaneMoveParams, PaneSplitParams,
+    QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams, TabActivationMode,
+    TabCreateParams, TabTarget, TabType, TargetSelector, TextParams,
 };
 use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
 use serde_json::json;
@@ -86,6 +87,7 @@ pub(crate) fn handle(
         ActionKind::TabActivate => tab_activate(instance_id, params, target, ctx),
         ActionKind::TabMove => tab_move(instance_id, params, target, ctx),
         ActionKind::PaneSplit => pane_split(instance_id, params, target, ctx),
+        ActionKind::PaneMove => pane_move(instance_id, params, target, ctx),
         ActionKind::PaneFocus | ActionKind::SessionActivate => {
             pane_focus(instance_id, action, target, ctx)
         }
@@ -271,6 +273,12 @@ fn window_create(
         "target selectors",
     )?;
     let params = decode_params::<TabCreateParams>(params)?;
+    if params.background {
+        return Err(ControlError::new(
+            ErrorCode::UnsupportedAction,
+            "window.create has no background form",
+        ));
+    }
     match params.tab_type {
         None | Some(TabType::Terminal | TabType::Default) => {}
         Some(TabType::Agent | TabType::CloudAgent) => {
@@ -628,7 +636,8 @@ fn pane_split(
     ctx: &mut ModelContext<LocalControlBridge>,
 ) -> Result<serde_json::Value, ControlError> {
     let action_kind = ActionKind::PaneSplit;
-    let direction = pane_direction(direction_param(params)?)?;
+    let decoded = decode_params::<PaneSplitParams>(params)?;
+    let direction = pane_direction(action_kind, decoded.direction)?;
     // The target tab is deliberately not activated, so a split into a background
     // tab leaves the person on the tab they were already looking at.
     //
@@ -639,10 +648,20 @@ fn pane_split(
     // on screen.
     reject_target_families(action_kind, target.session.is_some(), "session selectors")?;
     let pane_group = target_pane_group(action_kind, target, ctx)?;
-    focus_explicit_pane_target(action_kind, target, &pane_group, ctx)?;
+    let base_pane_id = if decoded.background {
+        // Naming the pane instead of focusing it is the whole point here: on a
+        // visible tab, focusing first is what moves the person's hand.
+        Some(target_pane_id(action_kind, target, &pane_group, ctx)?)
+    } else {
+        focus_explicit_pane_target(action_kind, target, &pane_group, ctx)?;
+        None
+    };
     let panes_before = pane_group.read(ctx, |pane_group, _| pane_group.visible_pane_ids());
-    pane_group.update(ctx, |pane_group, ctx| {
-        pane_group.handle_action(&PaneGroupAction::Add(direction), ctx);
+    pane_group.update(ctx, |pane_group, ctx| match base_pane_id {
+        Some(base_pane_id) => {
+            pane_group.add_terminal_pane_in_background(direction, base_pane_id, ctx);
+        }
+        None => pane_group.handle_action(&PaneGroupAction::Add(direction), ctx),
     });
     let created = pane_group
         .read(ctx, |pane_group, _| pane_group.visible_pane_ids())
@@ -652,6 +671,112 @@ fn pane_split(
     if let Some(created) = created {
         response["pane"] = json!({ "id": created.to_string() });
     }
+    Ok(response)
+}
+
+/// Takes a pane out of the tab it is in and seats it in another one, or in a
+/// tab made for it.
+///
+/// Both halves already exist upstream for drag and drop; what drag does on top
+/// of them -- activate the destination tab, land the pane in the hidden preview
+/// state -- is what a control-plane caller must not inherit.
+fn pane_move(
+    instance_id: &Option<InstanceId>,
+    params: &serde_json::Value,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let action_kind = ActionKind::PaneMove;
+    reject_target_families(action_kind, target.session.is_some(), "session selectors")?;
+    let decoded = decode_params::<PaneMoveParams>(params)?;
+    let direction = match decoded.direction {
+        Some(direction) => pane_direction(action_kind, direction)?,
+        None => Direction::Right,
+    };
+    let workspace = target_workspace(action_kind, target, ctx)?;
+    let source_group = target_pane_group(action_kind, target, ctx)?;
+    let pane_id = target_pane_id(action_kind, target, &source_group, ctx)?;
+    let source_tab_index =
+        workspace.read(ctx, |workspace, ctx| tab_index_from_target(target, workspace, ctx))?;
+
+    let destination_group = match &decoded.destination {
+        PaneMoveDestination::NewTab => None,
+        PaneMoveDestination::Tab { tab } => {
+            let found = workspace.read(ctx, |workspace, _| {
+                workspace
+                    .tab_views()
+                    .find(|view| view.id().to_string() == tab.0)
+                    .cloned()
+            });
+            let found = found.ok_or_else(|| {
+                ControlError::new(
+                    ErrorCode::StaleTarget,
+                    format!(
+                        "{} cannot resolve the destination tab",
+                        action_kind.as_str()
+                    ),
+                )
+            })?;
+            if found.id() == source_group.id() {
+                return Err(ControlError::new(
+                    ErrorCode::InvalidParams,
+                    format!("{} was given the tab the pane is already in", action_kind.as_str()),
+                ));
+            }
+            Some(found)
+        }
+    };
+
+    let destination_tab_id = workspace.update(ctx, |workspace, ctx| {
+        let Some(pane) =
+            source_group.update(ctx, |group, ctx| group.remove_pane_for_move(&pane_id, ctx))
+        else {
+            return Err(ControlError::new(
+                ErrorCode::StaleTarget,
+                format!(
+                    "{} could not take the pane out of its tab",
+                    action_kind.as_str()
+                ),
+            ));
+        };
+        match destination_group.as_ref() {
+            Some(group) => {
+                let seated =
+                    group.update(ctx, |group, ctx| {
+                        group.add_pane_for_move(pane, None, direction, ctx)
+                    });
+                if seated.is_none() {
+                    return Err(ControlError::new(
+                        ErrorCode::Internal,
+                        format!(
+                            "{} took the pane out but could not seat it",
+                            action_kind.as_str()
+                        ),
+                    ));
+                }
+                Ok(group.id().to_string())
+            }
+            None => {
+                let new_index = (source_tab_index + 1).min(workspace.tab_count());
+                let landed = workspace.add_tab_from_existing_pane_with_activation(
+                    pane, new_index, None, false, ctx,
+                );
+                workspace
+                    .get_pane_group_view(landed)
+                    .map(|view| view.id().to_string())
+                    .ok_or_else(|| {
+                        ControlError::new(
+                            ErrorCode::Internal,
+                            format!("{} did not produce a tab", action_kind.as_str()),
+                        )
+                    })
+            }
+        }
+    })?;
+
+    let mut response = ack(instance_id, action_kind);
+    response["pane"] = json!({ "id": pane_id.to_string() });
+    response["tab"] = json!({ "id": destination_tab_id });
     Ok(response)
 }
 
@@ -1121,7 +1246,10 @@ fn invalid_params<T>(action: ActionKind) -> Result<T, ControlError> {
     ))
 }
 
-fn pane_direction(direction: ControlDirection) -> Result<Direction, ControlError> {
+fn pane_direction(
+    action: ActionKind,
+    direction: ControlDirection,
+) -> Result<Direction, ControlError> {
     match direction {
         ControlDirection::Left => Ok(Direction::Left),
         ControlDirection::Right => Ok(Direction::Right),
@@ -1129,7 +1257,7 @@ fn pane_direction(direction: ControlDirection) -> Result<Direction, ControlError
         ControlDirection::Down => Ok(Direction::Down),
         ControlDirection::Previous | ControlDirection::Next => Err(ControlError::new(
             ErrorCode::InvalidParams,
-            "pane.split only accepts left, right, up, or down",
+            format!("{} only accepts left, right, up, or down", action.as_str()),
         )),
     }
 }

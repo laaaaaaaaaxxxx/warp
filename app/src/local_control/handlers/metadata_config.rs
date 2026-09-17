@@ -2,14 +2,15 @@
 use std::str::FromStr as _;
 
 use ::local_control::protocol::{
-    BooleanValueParams, ColorValueParams, KeyParams, KeyValueParams, PaneTarget, RenameParams,
-    TabTarget, TargetSelector, ThemeNameParams, WindowTarget,
+    BackgroundParams, BooleanValueParams, ColorValueParams, Direction, DirectionParams, KeyParams,
+    KeyValueParams, PaneTarget, RenameParams, TabGroupMoveParams, TabSelector, TabTarget,
+    TargetSelector, ThemeNameParams, WindowTarget,
 };
 use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
 use serde_json::json;
 use settings::Setting as _;
 use warp_core::ui::theme::AnsiColorIdentifier;
-use warpui::{ModelContext, SingletonEntity as _, TypedActionView as _, WindowId};
+use warpui::{ModelContext, SingletonEntity as _, TypedActionView as _, ViewHandle, WindowId};
 
 use super::metadata::{
     PaneEntry, TabEntry, WindowEntry, pane_entries_for_tabs, tab_entries_for_windows,
@@ -24,7 +25,7 @@ use crate::local_control::resolver::{require_active_window_id_for_action, worksp
 use crate::pane_group::PaneId;
 use crate::settings::{AccessibilitySettings, FontSettings, InputSettings, ThemeSettings};
 use crate::tab::SelectedTabColor;
-use crate::workspace::WorkspaceAction;
+use crate::workspace::{Workspace, WorkspaceAction};
 use crate::workspace::tab_group::TabGroupId;
 use crate::themes::theme::{SelectedSystemThemes, ThemeKind};
 use crate::user_config::WarpConfig;
@@ -249,12 +250,18 @@ fn tab_group_id_for_entry(
 pub(crate) fn tab_group_create(
     instance_id: &Option<InstanceId>,
     target: &TargetSelector,
+    action: &::local_control::Action,
     ctx: &mut ModelContext<LocalControlBridge>,
 ) -> Result<serde_json::Value, ControlError> {
+    let background = background_flag(action)?;
     let entry = select_single_tab_entry(target, ActionKind::TabGroupCreate, ctx)?;
     let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupCreate, ctx)?;
     workspace.update(ctx, |workspace, ctx| {
-        workspace.handle_action(&WorkspaceAction::NewTabGroupFromTab(entry.index), ctx);
+        // Called directly instead of through `NewTabGroupFromTab`: the action
+        // form ends by activating the grouped tab, which is right for the mouse
+        // path that dispatches it and wrong for a caller naming a tab it is not
+        // looking at.
+        workspace.new_tab_group_from_tab(entry.index, !background, ctx);
         // Creating a group ends by deferring `RenameTabGroup`, which opens an
         // inline editor over the group header seeded with "New Group". That is
         // right for a mouse, wrong for a caller with no keyboard: the editor
@@ -329,6 +336,214 @@ pub(crate) fn tab_group_close_above(
         workspace.handle_action(&WorkspaceAction::CloseTabsAboveGroup(group_id), ctx);
     });
     Ok(ack(instance_id, ActionKind::TabGroupCloseAbove))
+}
+
+/// Opens a tab inside the group the targeted tab belongs to.
+pub(crate) fn tab_group_new_tab(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    action: &::local_control::Action,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let background = background_flag(action)?;
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupNewTab, ctx)?;
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupNewTab, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupNewTab, ctx)?;
+    let new_tab_id = workspace.update(ctx, |workspace, ctx| {
+        let index = workspace
+            .new_tab_in_group(group_id, !background, ctx)
+            .ok_or_else(|| {
+                ControlError::new(
+                    ErrorCode::MissingTarget,
+                    "tab.group.new_tab could not open a tab in that group",
+                )
+            })?;
+        workspace
+            .get_pane_group_view(index)
+            .map(|view| view.id().to_string())
+            .ok_or_else(|| {
+                ControlError::new(
+                    ErrorCode::Internal,
+                    "tab.group.new_tab did not produce a tab identifier",
+                )
+            })
+    })?;
+    let mut response = tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupNewTab,
+        new_tab_id,
+        entry.window_id,
+    );
+    response["group"] = json!({ "id": group_id.0.to_string() });
+    Ok(response)
+}
+
+/// Dissolves the group the targeted tab belongs to. The tabs stay; only the
+/// grouping goes.
+pub(crate) fn tab_group_ungroup(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupUngroup, ctx)?;
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupUngroup, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupUngroup, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(&WorkspaceAction::UngroupTabs(group_id), ctx);
+    });
+    Ok(tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupUngroup,
+        entry.pane_group.id().to_string(),
+        entry.window_id,
+    ))
+}
+
+/// Takes the targeted tab out of its group, leaving the group and its other
+/// members alone.
+pub(crate) fn tab_group_remove_tab(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupRemoveTab, ctx)?;
+    // Resolved for its membership check: a tab outside any group has nothing to
+    // be removed from, and this is what says so.
+    tab_group_id_for_entry(&entry, ActionKind::TabGroupRemoveTab, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupRemoveTab, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(&WorkspaceAction::RemoveTabFromGroup(entry.index), ctx);
+    });
+    Ok(tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupRemoveTab,
+        entry.pane_group.id().to_string(),
+        entry.window_id,
+    ))
+}
+
+/// Moves the targeted tab into the group that the destination tab belongs to.
+pub(crate) fn tab_group_move_tab(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    action: &::local_control::Action,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let TabGroupMoveParams { destination_tab } = action.params_as()?;
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupMoveTab, ctx)?;
+    let destination = destination_tab_entry(
+        &destination_tab,
+        target,
+        ActionKind::TabGroupMoveTab,
+        ctx,
+    )?;
+    if destination.pane_group.id() == entry.pane_group.id() {
+        return Err(ControlError::new(
+            ErrorCode::InvalidParams,
+            "tab.group.move_tab was given the tab it is moving as the destination",
+        ));
+    }
+    let group_id = tab_group_id_for_entry(&destination, ActionKind::TabGroupMoveTab, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupMoveTab, ctx)?;
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(
+            &WorkspaceAction::MoveTabToGroup {
+                tab_index: entry.index,
+                group_id,
+            },
+            ctx,
+        );
+    });
+    let mut response = tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupMoveTab,
+        entry.pane_group.id().to_string(),
+        entry.window_id,
+    );
+    response["group"] = json!({ "id": group_id.0.to_string() });
+    Ok(response)
+}
+
+/// Moves the whole group the targeted tab belongs to, one slot up or down.
+///
+/// A grouped tab cannot leave its group by reordering -- upstream refuses that
+/// to keep a group's run contiguous -- so moving the group is how a grouped tab
+/// changes neighbourhood. The response reports the group's index afterwards and
+/// whether it actually shifted, because upstream declines some moves (a pinned
+/// neighbour, an end of the list) without reporting anything.
+pub(crate) fn tab_group_move(
+    instance_id: &Option<InstanceId>,
+    target: &TargetSelector,
+    action: &::local_control::Action,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let DirectionParams { direction } = action.params_as()?;
+    let workspace_action = match direction {
+        Direction::Up => WorkspaceAction::MoveTabGroupUp,
+        Direction::Down => WorkspaceAction::MoveTabGroupDown,
+        Direction::Left | Direction::Right | Direction::Previous | Direction::Next => {
+            return Err(ControlError::new(
+                ErrorCode::InvalidParams,
+                "tab.group.move only accepts up or down",
+            ));
+        }
+    };
+    let entry = select_single_tab_entry(target, ActionKind::TabGroupMove, ctx)?;
+    let group_id = tab_group_id_for_entry(&entry, ActionKind::TabGroupMove, ctx)?;
+    let workspace = workspace_for_window(entry.window_id, ActionKind::TabGroupMove, ctx)?;
+    let index_before = group_first_index(&workspace, group_id, ctx);
+    workspace.update(ctx, |workspace, ctx| {
+        workspace.handle_action(&workspace_action(group_id), ctx);
+    });
+    let index_after = group_first_index(&workspace, group_id, ctx);
+    let mut response = tab_mutation_result(
+        instance_id,
+        ActionKind::TabGroupMove,
+        entry.pane_group.id().to_string(),
+        entry.window_id,
+    );
+    response["group"] = json!({
+        "id": group_id.0.to_string(),
+        "index": index_after,
+        "moved": index_before != index_after,
+    });
+    Ok(response)
+}
+
+/// Where the group's first member sits in the tab strip right now.
+fn group_first_index(
+    workspace: &ViewHandle<Workspace>,
+    group_id: TabGroupId,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Option<usize> {
+    workspace.read(ctx, |workspace, _| {
+        workspace
+            .tabs
+            .iter()
+            .position(|tab| tab.group_id == Some(group_id))
+    })
+}
+
+/// Resolves the tab named in params, scoped to the same window the request
+/// already picked, so one `--window` covers both ends of a move.
+fn destination_tab_entry(
+    id: &TabSelector,
+    target: &TargetSelector,
+    action: ActionKind,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<TabEntry, ControlError> {
+    let destination_target = TargetSelector {
+        window: target.window.clone(),
+        tab: Some(TabTarget::Id { id: id.clone() }),
+        pane: None,
+        session: None,
+    };
+    select_single_tab_entry(&destination_target, action, ctx)
+}
+
+fn background_flag(action: &::local_control::Action) -> Result<bool, ControlError> {
+    let BackgroundParams { background } = action.params_as()?;
+    Ok(background)
 }
 
 fn rename_title(action: &::local_control::Action) -> Result<String, ControlError> {

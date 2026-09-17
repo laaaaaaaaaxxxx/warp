@@ -37,6 +37,9 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         ActionParameterSpec::BindingName => parse_params::<BindingNameParams>(action),
         ActionParameterSpec::BooleanValue => parse_params::<BooleanValueParams>(action),
         ActionParameterSpec::ColorValue => parse_params::<ColorValueParams>(action),
+        ActionParameterSpec::Background => {
+            parse_params::<::local_control::protocol::BackgroundParams>(action)
+        }
         ActionParameterSpec::Direction => parse_params::<DirectionParams>(action),
         ActionParameterSpec::FileOpen => parse_params::<FileOpenParams>(action),
         ActionParameterSpec::Key => parse_params::<KeyParams>(action),
@@ -46,6 +49,12 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         }
         ActionParameterSpec::Namespace => parse_params::<NamespaceParams>(action),
         ActionParameterSpec::PageQuery => parse_params::<PageQueryParams>(action),
+        ActionParameterSpec::PaneMove => {
+            parse_params::<::local_control::protocol::PaneMoveParams>(action)
+        }
+        ActionParameterSpec::PaneSplit => {
+            parse_params::<::local_control::protocol::PaneSplitParams>(action)
+        }
         ActionParameterSpec::Query => parse_params::<QueryParams>(action),
         ActionParameterSpec::Rename => parse_params::<RenameParams>(action),
         ActionParameterSpec::Resize => parse_params::<ResizeParams>(action),
@@ -56,6 +65,9 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         ActionParameterSpec::TabActivate => parse_params::<TabActivateParams>(action),
         ActionParameterSpec::TabClose => parse_params::<TabCloseParams>(action),
         ActionParameterSpec::TabCreate => parse_params::<TabCreateParams>(action),
+        ActionParameterSpec::TabGroupMove => {
+            parse_params::<::local_control::protocol::TabGroupMoveParams>(action)
+        }
         ActionParameterSpec::Text => parse_params::<TextParams>(action),
         ActionParameterSpec::ThemeName => parse_params::<ThemeNameParams>(action),
     }
