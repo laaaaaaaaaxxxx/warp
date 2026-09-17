@@ -215,6 +215,68 @@ pub struct TabCreateParams {
     /// attaches to that connection instead of starting a local shell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_host: Option<String>,
+    /// Leave the caller on the tab it is already showing. `window.create` has
+    /// no background form and rejects this.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub background: bool,
+}
+
+/// Keeps an unset boolean off the wire, so params that nobody asked for do not
+/// widen the request shape.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// Parameters for actions that can be told to leave the foreground alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundParams {
+    /// Do the work without making the affected tab active. The result still
+    /// names what was created, so the caller does not need the foreground to
+    /// find it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub background: bool,
+}
+
+/// Parameters for `pane.split`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaneSplitParams {
+    pub direction: Direction,
+    /// Leave the cursor in the pane it was in. The new pane is still created
+    /// and still reported back; it just does not take the hand with it.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub background: bool,
+}
+
+/// Where `pane.move` puts the pane it takes out of its current tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PaneMoveDestination {
+    /// A tab that already exists, named by the opaque id `tab list` reports.
+    Tab { tab: TabSelector },
+    /// A tab made for this pane, placed next to the tab it came from.
+    NewTab,
+}
+
+/// Parameters for `pane.move`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PaneMoveParams {
+    pub destination: PaneMoveDestination,
+    /// Which side of the destination tab's existing panes the moved pane lands
+    /// on. Unset means `right`; unused when the destination is a new tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Direction>,
+}
+
+/// Parameters for `tab.group.move_tab`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabGroupMoveParams {
+    /// Any tab already in the destination group. Group ids are re-minted every
+    /// restart, so a group is named by one of its members, never by its id.
+    pub destination_tab: TabSelector,
 }
 
 /// One selection range in 0-indexed LSP positions, `start <= end` in document

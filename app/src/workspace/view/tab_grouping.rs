@@ -234,7 +234,7 @@ impl Workspace {
         if self.selected_tab_indices().len() >= 2 {
             self.new_tab_group_from_selected_tabs(ctx);
         } else {
-            self.new_tab_group_from_tab(self.active_tab_index, ctx);
+            self.new_tab_group_from_tab(self.active_tab_index, true, ctx);
         }
     }
 

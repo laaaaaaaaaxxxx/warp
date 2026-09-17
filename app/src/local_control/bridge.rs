@@ -89,6 +89,7 @@ impl LocalControlBridge {
             | ActionKind::TabActivate
             | ActionKind::TabMove
             | ActionKind::PaneSplit
+            | ActionKind::PaneMove
             | ActionKind::PaneFocus
             | ActionKind::PaneNavigate
             | ActionKind::PaneResize
@@ -153,9 +154,36 @@ impl LocalControlBridge {
             ActionKind::TabColorClear => {
                 metadata_config::tab_color_clear(&self.instance_id, &request.target, ctx)
             }
-            ActionKind::TabGroupCreate => {
-                metadata_config::tab_group_create(&self.instance_id, &request.target, ctx)
+            ActionKind::TabGroupCreate => metadata_config::tab_group_create(
+                &self.instance_id,
+                &request.target,
+                &request.action,
+                ctx,
+            ),
+            ActionKind::TabGroupNewTab => metadata_config::tab_group_new_tab(
+                &self.instance_id,
+                &request.target,
+                &request.action,
+                ctx,
+            ),
+            ActionKind::TabGroupUngroup => {
+                metadata_config::tab_group_ungroup(&self.instance_id, &request.target, ctx)
             }
+            ActionKind::TabGroupRemoveTab => {
+                metadata_config::tab_group_remove_tab(&self.instance_id, &request.target, ctx)
+            }
+            ActionKind::TabGroupMove => metadata_config::tab_group_move(
+                &self.instance_id,
+                &request.target,
+                &request.action,
+                ctx,
+            ),
+            ActionKind::TabGroupMoveTab => metadata_config::tab_group_move_tab(
+                &self.instance_id,
+                &request.target,
+                &request.action,
+                ctx,
+            ),
             ActionKind::TabGroupRename => metadata_config::tab_group_rename(
                 &self.instance_id,
                 &request.target,
