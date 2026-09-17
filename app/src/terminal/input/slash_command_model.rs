@@ -124,6 +124,19 @@ impl SlashCommandEntryState {
     }
 }
 
+/// Byte offset of the slash that opened the menu, if any.
+///
+/// The trigger is the _last_ slash in the buffer rather than a leading one: on this build a slash
+/// reaches the input only as the menu keystroke, never as text meant to stay.
+pub fn slash_trigger_offset(input: &str) -> Option<usize> {
+    input.rfind('/')
+}
+
+/// The trigger slash and everything after it, which is what the classifier is fed.
+pub fn slash_trigger_slice(input: &str) -> Option<&str> {
+    slash_trigger_offset(input).map(|at| &input[at..])
+}
+
 pub fn slash_command_composition_filter(input: &str) -> Option<&str> {
     let pending_command = input.strip_prefix('/')?;
     let command_token = pending_command
@@ -274,7 +287,7 @@ impl SlashCommandModel {
             new_content: new, ..
         } = event;
         self.lifecycle
-            .input_changed(new.is_empty(), new.starts_with('/'));
+            .input_changed(new.is_empty(), slash_trigger_slice(new).is_some());
         // AI-off is no longer a blanket disable: AI-dependent commands are filtered out
         // of `active_commands` via `Availability::AI_ENABLED`, so parsing still works for
         // non-AI commands like `/open-file`.
@@ -306,7 +319,11 @@ impl SlashCommandModel {
         }
 
         let old_state = self.state.clone();
-        match self.data_source.as_ref(ctx).parse_input(new, ctx) {
+        match self
+            .data_source
+            .as_ref(ctx)
+            .parse_input(slash_trigger_slice(new).unwrap_or(new), ctx)
+        {
             ParsedSlashCommandInput::SlashCommand(detected_command) => {
                 if let SlashCommandEntryState::SlashCommand(old_detected_command) = &self.state
                     && *old_detected_command == detected_command

@@ -7,7 +7,9 @@ use crate::search::slash_command_menu::SlashCommandId;
 use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
-use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
+use crate::terminal::input::slash_command_model::{
+    SlashCommandEntryState, SlashCommandModel, slash_trigger_slice,
+};
 use crate::terminal::input::slash_commands::{
     AcceptSlashCommandOrSavedPrompt, GuiSlashCommandDataSource, GuiZeroStateDataSource,
     SlashCommandMixer, UpdatedActiveCommands, build_slash_command_mixer, slash_command_query,
@@ -165,11 +167,8 @@ impl InlineSlashCommandView {
     }
 
     fn run_query_for_current_slash_filter(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(filter) = self
-            .input_buffer_model
-            .as_ref(ctx)
-            .current_value()
-            .strip_prefix('/')
+        let Some(filter) = slash_trigger_slice(self.input_buffer_model.as_ref(ctx).current_value())
+            .and_then(|trigger| trigger.strip_prefix('/'))
             .map(ToOwned::to_owned)
         else {
             return;

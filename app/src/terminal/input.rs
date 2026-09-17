@@ -299,7 +299,9 @@ use crate::terminal::input::rewind::{RewindMenuEvent, RewindMenuView};
 use crate::terminal::input::skills::{
     InlineSkillSelectorEvent, InlineSkillSelectorView, LOCAL_SKILLS_REMOTE_EXECUTION_ERROR_MESSAGE,
 };
-use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
+use crate::terminal::input::slash_command_model::{
+    SlashCommandEntryState, SlashCommandModel, slash_trigger_offset,
+};
 use crate::terminal::input::slash_commands::{
     CloudModeV2SlashCommandView, GuiSlashCommandDataSource, InlineSlashCommandView,
     SlashCommandDataSource as _, SlashCommandTrigger, UpdatedActiveCommands,
@@ -8150,9 +8152,20 @@ impl Input {
         });
 
         // As the first step, clear the existing buffer so that selecting a workflow
-        // is effectively a buffer replacement (not append).
-        self.editor.update(ctx, |editor, ctx| {
-            editor.clear_buffer(ctx);
+        // is effectively a buffer replacement (not append). When the slash menu is what opened
+        // this selection, only the trigger span is replaced, so text typed before the slash stays.
+        let trigger_span = self
+            .suggestions_mode_model
+            .as_ref(ctx)
+            .is_slash_commands()
+            .then(|| self.editor.read(ctx, |editor, ctx| editor.buffer_text(ctx)))
+            .and_then(|text| slash_trigger_offset(&text).map(|at| at..text.len()));
+        self.editor.update(ctx, |editor, ctx| match &trigger_span {
+            Some(span) => editor.system_delete(
+                ByteOffset::from(span.start)..ByteOffset::from(span.end),
+                ctx,
+            ),
+            None => editor.clear_buffer(ctx),
         });
 
         if let Some(env_vars_command) = selected_env_vars

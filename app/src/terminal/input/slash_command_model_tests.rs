@@ -275,7 +275,7 @@ fn test_disabled_until_empty_buffer_reevaluates_when_slash_is_added_to_start() {
 }
 
 #[test]
-fn test_second_slash_in_command_token_sets_state_to_none() {
+fn test_last_slash_in_buffer_is_the_trigger() {
     App::test((), |mut app| async move {
         initialize_app(&mut app);
 
@@ -292,10 +292,11 @@ fn test_second_slash_in_command_token_sets_state_to_none() {
         });
 
         input.read(&app, |input, ctx| {
-            assert!(matches!(
-                input.slash_command_model.as_ref(ctx).state(),
-                SlashCommandEntryState::None
-            ));
+            let state = input.slash_command_model.as_ref(ctx).state();
+            let SlashCommandEntryState::Composing { filter } = state else {
+                panic!("expected composing state, got {state:?}");
+            };
+            assert_eq!(filter.as_str(), "bar");
         });
     });
 }
