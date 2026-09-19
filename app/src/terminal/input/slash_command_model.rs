@@ -124,6 +124,15 @@ impl SlashCommandEntryState {
     }
 }
 
+/// The part of `input` the slash menu owns. With a trigger recorded by the control plane, and
+/// the slash it recorded still there, that is the slash and everything after it; otherwise it
+/// is the whole buffer, which is upstream's rule (a leading slash, or nothing).
+pub fn slash_menu_slice(input: &str, trigger: Option<usize>) -> &str {
+    trigger
+        .filter(|&at| input.get(at..).is_some_and(|rest| rest.starts_with('/')))
+        .map_or(input, |at| &input[at..])
+}
+
 pub fn slash_command_composition_filter(input: &str) -> Option<&str> {
     let pending_command = input.strip_prefix('/')?;
     let command_token = pending_command
@@ -142,6 +151,9 @@ pub struct SlashCommandModel {
     state: SlashCommandEntryState,
     lifecycle: InputDrivenInlineMenuLifecycle,
     data_source: ModelHandle<GuiSlashCommandDataSource>,
+    /// Byte offset of the slash the control plane opened the menu with. Only a command sets it,
+    /// so without one the buffer's contents decide nothing beyond what upstream already lets them.
+    explicit_trigger: Option<usize>,
 }
 
 impl SlashCommandModel {
@@ -187,6 +199,7 @@ impl SlashCommandModel {
             data_source,
             state: SlashCommandEntryState::None,
             lifecycle: InputDrivenInlineMenuLifecycle::default(),
+            explicit_trigger: None,
         }
     }
 
@@ -235,6 +248,16 @@ impl SlashCommandModel {
         &self.state
     }
 
+    /// Where the control plane opened the menu, while the slash it wrote is still in place.
+    pub fn explicit_trigger(&self) -> Option<usize> {
+        self.explicit_trigger
+    }
+
+    /// Record where the next slash lands, so the menu keys off it instead of the buffer's head.
+    pub fn set_explicit_trigger(&mut self, at: usize) {
+        self.explicit_trigger = Some(at);
+    }
+
     fn disable_until_empty_buffer(&mut self, input_is_empty: bool, ctx: &mut ModelContext<Self>) {
         if self.is_disabled() {
             return;
@@ -273,8 +296,17 @@ impl SlashCommandModel {
         let InputBufferUpdateEvent {
             new_content: new, ..
         } = event;
+        // A recorded trigger is void once its slash is gone: deleted, or written over by whatever
+        //   the menu inserted.
+        if self
+            .explicit_trigger
+            .is_some_and(|at| !new.get(at..).is_some_and(|rest| rest.starts_with('/')))
+        {
+            self.explicit_trigger = None;
+        }
+        let owned = slash_menu_slice(new, self.explicit_trigger);
         self.lifecycle
-            .input_changed(new.is_empty(), new.starts_with('/'));
+            .input_changed(new.is_empty(), owned.starts_with('/'));
         // AI-off is no longer a blanket disable: AI-dependent commands are filtered out
         // of `active_commands` via `Availability::AI_ENABLED`, so parsing still works for
         // non-AI commands like `/open-file`.
@@ -306,7 +338,7 @@ impl SlashCommandModel {
         }
 
         let old_state = self.state.clone();
-        match self.data_source.as_ref(ctx).parse_input(new, ctx) {
+        match self.data_source.as_ref(ctx).parse_input(owned, ctx) {
             ParsedSlashCommandInput::SlashCommand(detected_command) => {
                 if let SlashCommandEntryState::SlashCommand(old_detected_command) = &self.state
                     && *old_detected_command == detected_command

@@ -439,6 +439,9 @@ pub enum InputCommand {
 
     /// Read the current input buffer without changing it.
     Get(TargetArgs),
+
+    /// Open the slash commands menu at the cursor, leaving the existing input in place.
+    SlashCommands(TargetArgs),
 }
 
 #[derive(Debug, Clone, Subcommand)]

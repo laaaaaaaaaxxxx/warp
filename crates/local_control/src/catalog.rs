@@ -253,6 +253,7 @@ define_action_catalog! {
         InputClose => { name: "input.close", status: Implemented, target: Input, params: None, result: Acknowledgement },
         InputSubmit => { name: "input.submit", status: Implemented, target: Input, params: Text, result: Acknowledgement },
         InputGet => { name: "input.get", status: Implemented, target: Input, params: None, result: InputText },
+        InputSlashCommands => { name: "input.slash_commands", status: Implemented, target: Input, params: None, result: Acknowledgement },
     }
 
     selection {

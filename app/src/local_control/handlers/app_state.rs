@@ -140,6 +140,9 @@ pub(crate) fn handle(
         ActionKind::InputClose => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputSubmit => input_text(instance_id, action, params, target, false, ctx),
         ActionKind::InputGet => input_text(instance_id, action, params, target, false, ctx),
+        ActionKind::InputSlashCommands => {
+            input_text(instance_id, action, params, target, false, ctx)
+        }
         ActionKind::SurfaceSettingsOpen => surface_settings_open(instance_id, params, target, ctx),
         ActionKind::SurfaceCommandPaletteOpen => surface_palette_open(
             instance_id,
@@ -965,6 +968,14 @@ fn input_text(
             if !terminal_view.submit_cli_agent_rich_input(text.clone(), ctx) {
                 terminal_view.execute_command_or_set_pending(&text, ctx);
             }
+        });
+        return Ok(ack(instance_id, action_kind));
+    }
+    if matches!(action_kind, ActionKind::InputSlashCommands) {
+        terminal_view.update(ctx, |terminal_view, ctx| {
+            terminal_view.input().update(ctx, |input, ctx| {
+                input.open_slash_commands_at_cursor(ctx);
+            });
         });
         return Ok(ack(instance_id, action_kind));
     }
