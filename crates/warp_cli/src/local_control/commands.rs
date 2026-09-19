@@ -647,6 +647,9 @@ pub(super) fn run_input_command(
             output_format,
         ),
         InputCommand::Get(args) => run_action(args, ActionKind::InputGet, output_format),
+        InputCommand::SlashCommands(args) => {
+            run_action(args, ActionKind::InputSlashCommands, output_format)
+        }
     }
 }
 

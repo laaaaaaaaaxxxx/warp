@@ -2,7 +2,7 @@ use settings::Setting as _;
 use warp_errors::report_if_error;
 use warpui::{App, SingletonEntity as _};
 
-use super::{ParsedSlashCommandInput, SlashCommandEntryState};
+use super::{ParsedSlashCommandInput, SlashCommandEntryState, slash_menu_slice};
 use crate::ai::agent::conversation::AIConversationId;
 use crate::ai::blocklist::{QueuedQuery, QueuedQueryModel, QueuedQueryOrigin};
 use crate::search::slash_command_menu::static_commands::commands;
@@ -684,5 +684,109 @@ fn repository_gated_command_stays_within_repository() {
                 "a REPOSITORY-gated command must stay available when moving within the same repo"
             );
         });
+    });
+}
+
+#[test]
+fn test_slash_menu_slice_keys_off_the_recorded_trigger() {
+    assert_eq!(slash_menu_slice("dwada/pla", Some(5)), "/pla");
+    assert_eq!(slash_menu_slice("/pla", Some(0)), "/pla");
+}
+
+#[test]
+fn test_slash_menu_slice_is_the_whole_buffer_without_a_trigger() {
+    // No record: upstream's rule. A dropped-in path stays a path for the classifier to reject.
+    assert_eq!(slash_menu_slice("/root/project/warp", None), "/root/project/warp");
+    assert_eq!(slash_menu_slice("dwada", None), "dwada");
+}
+
+#[test]
+fn test_slash_menu_slice_ignores_a_stale_trigger() {
+    // The recorded slash is gone, or the record points past the buffer: it decides nothing.
+    assert_eq!(slash_menu_slice("dwada", Some(5)), "dwada");
+    assert_eq!(slash_menu_slice("dwadapla", Some(5)), "dwadapla");
+    assert_eq!(slash_menu_slice("ab", Some(9)), "ab");
+}
+
+#[test]
+fn test_control_plane_opens_the_menu_over_existing_text_and_lands_after_it() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(
+            &mut app, None, /* history_file_commands */
+            None,
+        )
+        .await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.set_input_mode_natural_language_detection(ctx);
+            input.user_insert("dwada", ctx);
+            input.open_slash_commands_at_cursor(ctx);
+        });
+
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "dwada/");
+            let state = input.slash_command_model.as_ref(ctx).state();
+            let SlashCommandEntryState::Composing { filter } = state else {
+                panic!("expected composing state, got {state:?}");
+            };
+            assert_eq!(filter.as_str(), "");
+            assert!(input.suggestions_mode_model.as_ref(ctx).is_slash_commands());
+        });
+
+        // Filter letters land after the slash, and only they reach the classifier.
+        input.update(&mut app, |input, ctx| {
+            input.user_insert("pl", ctx);
+        });
+        input.read(&app, |input, ctx| {
+            let state = input.slash_command_model.as_ref(ctx).state();
+            let SlashCommandEntryState::Composing { filter } = state else {
+                panic!("expected composing state, got {state:?}");
+            };
+            assert_eq!(filter.as_str(), "pl");
+        });
+
+        // A selection writes over the menu's span only; the text in front of it stays.
+        input.update(&mut app, |input, ctx| {
+            input.replace_slash_menu_span("/plan ", ctx);
+        });
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "dwada/plan ");
+        });
+    });
+}
+
+#[test]
+fn test_a_path_in_the_buffer_does_not_open_the_menu() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(
+            &mut app, None, /* history_file_commands */
+            None,
+        )
+        .await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        // Dropped into an empty buffer, and after text: neither is a command, nothing opens.
+        for typed in ["/root/project/warp/app", "dwada /root/project/warp/app"] {
+            input.update(&mut app, |input, ctx| {
+                input.set_input_mode_natural_language_detection(ctx);
+                input.replace_buffer_content("", ctx);
+                input.user_insert(typed, ctx);
+            });
+            input.read(&app, |input, ctx| {
+                assert!(
+                    matches!(
+                        input.slash_command_model.as_ref(ctx).state(),
+                        SlashCommandEntryState::None
+                    ),
+                    "{typed:?} must not be read as a command"
+                );
+                assert!(!input.suggestions_mode_model.as_ref(ctx).is_slash_commands());
+            });
+        }
     });
 }
