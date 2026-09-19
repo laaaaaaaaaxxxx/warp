@@ -7,7 +7,9 @@ use crate::search::slash_command_menu::SlashCommandId;
 use crate::server::ids::SyncId;
 use crate::terminal::input::buffer_model::InputBufferModel;
 use crate::terminal::input::inline_menu::{InlineMenuEvent, InlineMenuPositioner, InlineMenuView};
-use crate::terminal::input::slash_command_model::{SlashCommandEntryState, SlashCommandModel};
+use crate::terminal::input::slash_command_model::{
+    SlashCommandEntryState, SlashCommandModel, slash_menu_slice,
+};
 use crate::terminal::input::slash_commands::{
     AcceptSlashCommandOrSavedPrompt, GuiSlashCommandDataSource, GuiZeroStateDataSource,
     SlashCommandMixer, UpdatedActiveCommands, build_slash_command_mixer, slash_command_query,
@@ -64,6 +66,7 @@ pub struct InlineSlashCommandView {
     suggestions_mode_model: ModelHandle<InputSuggestionsModeModel>,
     mixer: ModelHandle<SlashCommandMixer>,
     input_buffer_model: ModelHandle<InputBufferModel>,
+    slash_command_model: ModelHandle<SlashCommandModel>,
 }
 
 impl InlineSlashCommandView {
@@ -161,16 +164,16 @@ impl InlineSlashCommandView {
             mixer,
             suggestions_mode_model,
             input_buffer_model,
+            slash_command_model: slash_command_model.clone(),
         }
     }
 
     fn run_query_for_current_slash_filter(&mut self, ctx: &mut ViewContext<Self>) {
-        let Some(filter) = self
-            .input_buffer_model
-            .as_ref(ctx)
-            .current_value()
-            .strip_prefix('/')
-            .map(ToOwned::to_owned)
+        let trigger = self.slash_command_model.as_ref(ctx).explicit_trigger();
+        let Some(filter) =
+            slash_menu_slice(self.input_buffer_model.as_ref(ctx).current_value(), trigger)
+                .strip_prefix('/')
+                .map(ToOwned::to_owned)
         else {
             return;
         };

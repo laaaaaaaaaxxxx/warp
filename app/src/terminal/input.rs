@@ -8566,9 +8566,15 @@ impl Input {
         });
 
         // As the first step, clear the existing buffer so that selecting a workflow
-        // is effectively a buffer replacement (not append).
-        self.editor.update(ctx, |editor, ctx| {
-            editor.clear_buffer(ctx);
+        // is effectively a buffer replacement (not append). When the control plane opened the
+        // slash menu, only the menu's span goes, so what was typed before the slash stays.
+        let span = self.slash_menu_span(ctx);
+        self.editor.update(ctx, |editor, ctx| match &span {
+            Some(span) => editor.system_delete(
+                ByteOffset::from(span.start)..ByteOffset::from(span.end),
+                ctx,
+            ),
+            None => editor.clear_buffer(ctx),
         });
 
         if let Some(env_vars_command) = selected_env_vars
@@ -13718,6 +13724,49 @@ impl Input {
     // included in the string).
     pub fn system_insert(&mut self, text: &str, ctx: &mut ViewContext<Self>) -> bool {
         self.insert_internal(text, EditOrigin::UserInitiated, ctx)
+    }
+
+    /// Open the slash commands menu at the cursor, leaving whatever is already in the buffer in
+    /// place. The control plane calls this for the bare `/` keystroke: the menu keys off the
+    /// offset recorded here instead of the buffer's head, so text in front of the slash neither
+    /// decides whether the menu opens nor gets written over by what the menu inserts.
+    pub fn open_slash_commands_at_cursor(&mut self, ctx: &mut ViewContext<Self>) {
+        let at = self.start_byte_index_of_first_selection(ctx).as_usize();
+        self.slash_command_model
+            .update(ctx, |model, _| model.set_explicit_trigger(at));
+        self.system_insert("/", ctx);
+    }
+
+    /// Byte range the open menu owns — the recorded trigger slash through the end of the
+    /// buffer — or `None` when the control plane did not open it, in which case upstream's
+    /// whole-buffer replacement stands.
+    fn slash_menu_span(&self, ctx: &mut ViewContext<Self>) -> Option<Range<usize>> {
+        if !self.suggestions_mode_model.as_ref(ctx).is_slash_commands() {
+            return None;
+        }
+        let at = self.slash_command_model.as_ref(ctx).explicit_trigger()?;
+        let len = self
+            .editor
+            .read(ctx, |editor, ctx| editor.buffer_text(ctx))
+            .len();
+        Some(at..len)
+    }
+
+    /// Write `text` over the menu's span, or over the whole buffer when there is no span.
+    pub(super) fn replace_slash_menu_span(&mut self, text: &str, ctx: &mut ViewContext<Self>) {
+        let Some(span) = self.slash_menu_span(ctx) else {
+            self.editor.update(ctx, |editor, ctx| {
+                editor.set_buffer_text(text, ctx);
+            });
+            return;
+        };
+        self.editor.update(ctx, |editor, ctx| {
+            editor.system_delete(
+                ByteOffset::from(span.start)..ByteOffset::from(span.end),
+                ctx,
+            );
+            editor.system_insert(text, PlainTextEditorViewAction::SystemInsert, ctx);
+        });
     }
 
     pub fn has_pending_command(&self) -> bool {

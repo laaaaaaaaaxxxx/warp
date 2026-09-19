@@ -500,6 +500,10 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
         (ActionKind::InputClose, vec!["warpctrl", "input", "close"]),
         (ActionKind::InputGet, vec!["warpctrl", "input", "get"]),
         (
+            ActionKind::InputSlashCommands,
+            vec!["warpctrl", "input", "slash-commands"],
+        ),
+        (
             ActionKind::InputSubmit,
             vec!["warpctrl", "input", "submit", "hello"],
         ),
@@ -755,6 +759,7 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
             InputCommand::Close(_) => Some(ActionKind::InputClose),
             InputCommand::Submit(_) => Some(ActionKind::InputSubmit),
             InputCommand::Get(_) => Some(ActionKind::InputGet),
+            InputCommand::SlashCommands(_) => Some(ActionKind::InputSlashCommands),
         },
         ControlCommand::Theme(command) => match command {
             ThemeCommand::List(_) => Some(ActionKind::ThemeList),
