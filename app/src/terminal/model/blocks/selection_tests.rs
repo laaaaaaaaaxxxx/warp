@@ -1587,3 +1587,41 @@ pub fn test_rect_selection_inverted_multi_block() {
         })
     })
 }
+
+#[test]
+fn epy766_passive_command_completion_keeps_selection_time() {
+    let mut blocks = new_bootstrapped_block_list(None, None, ChannelEventListener::new_for_test());
+    blocks.start_active_block();
+    input_string(&mut blocks, "echo abc");
+    blocks.preexec(PreexecValue::default());
+    input_string(&mut blocks, "abc");
+    blocks.on_finish_byte_processing(&ansi::ProcessorInput::new(&[]));
+    let row = blocks.active_block().output_grid_offset();
+    blocks.start_selection(
+        BlockListPoint::new(row, 0),
+        SelectionType::Simple,
+        Side::Left,
+    );
+    blocks.update_selection(BlockListPoint::new(row, 3), Side::Left);
+    let selection = SemanticSelection::mock(false, "");
+    let range = blocks.renderable_selection(&selection, false).unwrap();
+    let before = (
+        range.first().start,
+        range.first().end,
+        blocks.selection_changed_at,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    command_finished_and_precmd(&mut blocks);
+    let range = blocks.renderable_selection(&selection, false).unwrap();
+    let after = (
+        range.first().start,
+        range.first().end,
+        blocks.selection_changed_at,
+    );
+    println!("EPY766 passive completion before={before:?}, after={after:?}");
+    assert_eq!((before.0, before.1), (after.0, after.1));
+    assert_eq!(
+        before.2, after.2,
+        "command completion is not a new selection action"
+    );
+}

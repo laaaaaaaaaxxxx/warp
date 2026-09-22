@@ -600,12 +600,16 @@ pub(crate) fn pane_list(
             // editor's selection over the terminal view's -- external tools need
             // exactly the distinction it collapses. Read per pane, so split panes
             // each report their own selection.
-            let terminal_selection = terminal_view
-                .as_ref()
-                .and_then(|tv| tv.as_ref(ctx).selected_text(ctx));
-            let input_selection = terminal_view
-                .as_ref()
-                .and_then(|tv| tv.as_ref(ctx).selected_text_from_input(ctx));
+            let terminal_selection = terminal_view.as_ref().and_then(|tv| {
+                let view = tv.as_ref(ctx);
+                view.selected_text(ctx)
+                    .map(|text| (text, view.model.lock().selection_changed_at()))
+            });
+            let input_selection = terminal_view.as_ref().and_then(|tv| {
+                let view = tv.as_ref(ctx);
+                view.selected_text_from_input(ctx)
+                    .map(|text| (text, view.input().as_ref(ctx).selection_changed_at))
+            });
             (
                 pane_group.focused_pane_id(ctx) == entry.pane_id,
                 terminal_view.is_some(),
@@ -644,9 +648,13 @@ pub(crate) fn pane_list(
                     // Editor selection rides the same read as file path and cursor:
                     // one pass, one active-tab decision, no chance of the two
                     // disagreeing about which tab they describe.
-                    let editor_selection = cv
-                        .selected_text(cx)
-                        .map(|text| (text, cv.active_selection_ranges(cx)));
+                    let editor_selection = cv.selected_text(cx).map(|text| {
+                        (
+                            text,
+                            cv.active_selection_ranges(cx),
+                            cv.active_selection_changed_at(cx),
+                        )
+                    });
                     (
                         file_path,
                         file_remote_host,
@@ -675,6 +683,7 @@ pub(crate) fn pane_list(
             LocalOrRemotePath,
             String,
             Vec<(usize, usize, usize, usize)>,
+            Option<i64>,
         )> = None;
         if is_active && let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
             for cr in cr_views {
@@ -741,23 +750,27 @@ pub(crate) fn pane_list(
         // is selected anywhere in this pane. Terminal and input carriers have no
         // ranges: a terminal has no file line numbers to report.
         let mut selections: Vec<serde_json::Value> = Vec::new();
-        if let Some(text) = terminal_selection {
-            selections.push(json!({ "carrier": "terminal", "text": text }));
+        if let Some((text, selected_at)) = terminal_selection {
+            selections
+                .push(json!({ "carrier": "terminal", "text": text, "selected_at": selected_at }));
         }
-        if let Some(text) = input_selection {
-            selections.push(json!({ "carrier": "input", "text": text }));
+        if let Some((text, selected_at)) = input_selection {
+            selections
+                .push(json!({ "carrier": "input", "text": text, "selected_at": selected_at }));
         }
-        if let Some((text, ranges)) = editor_selection {
+        if let Some((text, ranges, selected_at)) = editor_selection {
             selections.push(json!({
                 "carrier": "editor",
+                "selected_at": selected_at,
                 "text": text,
                 "file_path": file_path.clone(),
                 "ranges": lsp_ranges_json(&ranges),
             }));
         }
-        if let Some((location, text, ranges)) = cr_selection {
+        if let Some((location, text, ranges, selected_at)) = cr_selection {
             selections.push(json!({
                 "carrier": "code_review",
+                "selected_at": selected_at,
                 "text": text,
                 "file_path": location.display_path(),
                 "remote_host_id": location

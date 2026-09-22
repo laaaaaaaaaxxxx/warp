@@ -40,6 +40,7 @@ use crate::terminal::model::selection::{Selection, SelectionRange};
 use crate::terminal::{SizeInfo, SizeUpdate};
 
 pub struct AltScreen {
+    pub(crate) selection_changed_at: Option<i64>,
     grid_handler: GridHandler,
     // Number of fractional lines that have yet to scroll the alt grid.
     // This number is always between 1. and -1, since the alt grid only supports
@@ -86,6 +87,7 @@ impl AltScreen {
             grid_handler,
             pending_lines_to_scroll: Lines::zero(),
             selection: None,
+            selection_changed_at: None,
             smart_select_override: None,
             bg_color_sampler: Arc::new(Mutex::new(ColorSampler::new())),
             event_proxy,
@@ -238,6 +240,7 @@ impl AltScreen {
 
     fn set_selection(&mut self, value: Selection) {
         self.selection = Some(value);
+        self.selection_changed_at = Some(chrono::Utc::now().timestamp_millis());
         self.event_proxy
             .send_app_event(TerminalEvent::TextSelectionChanged);
     }

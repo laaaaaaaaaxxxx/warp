@@ -1706,6 +1706,7 @@ impl CanExecuteCommand {
 }
 
 pub struct Input {
+    pub(crate) selection_changed_at: Option<i64>,
     model: Arc<FairMutex<TerminalModel>>,
     menu_positioning_provider: Arc<dyn MenuPositioningProvider>,
     tips_completed: ModelHandle<TipsCompleted>,
@@ -4133,6 +4134,7 @@ impl Input {
 
         let is_editor_empty = editor.as_ref(ctx).is_empty(ctx);
         let mut input = Self {
+            selection_changed_at: None,
             input_suggestions,
             suggestions_mode_model,
             completions_menu_resizable_width: resizable_state_handle(completions_menu_width),
@@ -11341,6 +11343,7 @@ impl Input {
                 }
             }
             EditorEvent::SelectionChanged => {
+                self.selection_changed_at = Some(chrono::Utc::now().timestamp_millis());
                 let mode = self.suggestions_mode_model.as_ref(ctx).mode().clone();
                 let is_completion_suggestions =
                     matches!(mode, InputSuggestionsMode::CompletionSuggestions { .. });
