@@ -1668,6 +1668,15 @@ impl CodeEditorView {
         ctx.notify();
     }
 
+    pub(crate) fn selection_changed_at(&self, ctx: &AppContext) -> Option<i64> {
+        self.model
+            .as_ref(ctx)
+            .selection()
+            .as_ref(ctx)
+            .selected_at
+            .map(|time| chrono::DateTime::<chrono::Utc>::from(time).timestamp_millis())
+    }
+
     pub fn selected_text(&self, ctx: &AppContext) -> Option<String> {
         let selected_text = self
             .model

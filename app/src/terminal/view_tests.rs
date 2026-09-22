@@ -10841,3 +10841,117 @@ fn visible_bootstrap_block_leaves_focus_on_tab_group_rename_editor() {
         }));
     });
 }
+
+#[test]
+fn epy766_terminal_event_clock() {
+    App::test((), |mut app| async move {
+        initialize_app_for_terminal_view(&mut app);
+        let terminal = add_window_with_terminal(&mut app, None);
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.start_command_execution();
+                let blocks = model.block_list_mut();
+                for ch in "foo".chars() {
+                    blocks.input(ch);
+                }
+                blocks.linefeed();
+                blocks.preexec(PreexecValue::default());
+                blocks.on_finish_byte_processing(&ansi::ProcessorInput::new(&[]));
+            }
+            view.begin_block_text_selection(
+                BlockListPoint::new(1.0, 1),
+                Side::Right,
+                SelectionType::Semantic,
+                Vector2F::zero(),
+                ctx,
+            );
+            view.end_text_selection(ctx);
+        });
+        let first = terminal.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.model.lock().selection_changed_at(),
+            )
+        });
+        println!("EPY766 normal={first:?}");
+        assert_eq!(first.0.as_deref(), Some("foo"));
+        assert!(
+            first.1.is_some(),
+            "time must exist when selected text is readable"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let repeat = terminal.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.model.lock().selection_changed_at(),
+            )
+        });
+        assert_eq!(first, repeat);
+        terminal.update(&mut app, |view, ctx| {
+            view.clear_selections_for_control(ctx);
+        });
+        assert!(
+            terminal
+                .read(&app, |view, ctx| view.selected_text(ctx))
+                .is_none()
+        );
+        terminal.update(&mut app, |view, ctx| {
+            view.begin_block_text_selection(
+                BlockListPoint::new(1.0, 1),
+                Side::Right,
+                SelectionType::Semantic,
+                Vector2F::zero(),
+                ctx,
+            );
+            view.end_text_selection(ctx);
+        });
+        let reselected = terminal.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.model.lock().selection_changed_at(),
+            )
+        });
+        println!("EPY766 reselected={reselected:?}");
+        assert_eq!(reselected.0, first.0);
+        assert!(reselected.1 > first.1);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        terminal.update(&mut app, |view, ctx| {
+            {
+                let mut model = view.model.lock();
+                model.set_mode(ansi::Mode::SwapScreen {
+                    save_cursor_and_clear_screen: true,
+                });
+                model.alt_screen_mut().input('h');
+            }
+            view.begin_alt_selection(Point::new(0, 0), Side::Left, SelectionType::Simple, ctx);
+            view.update_alt_selection(Point::new(0, 2), Side::Left, &Lines::zero(), ctx);
+            view.end_alt_selection(ctx);
+        });
+        let alt = terminal.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.model.lock().selection_changed_at(),
+            )
+        });
+        println!("EPY766 alt={alt:?}");
+        assert_eq!(alt.0.as_deref(), Some("h"));
+        assert!(alt.1 > reselected.1);
+        terminal.update(&mut app, |view, _ctx| {
+            view.model.lock().unset_mode(ansi::Mode::SwapScreen {
+                save_cursor_and_clear_screen: true,
+            });
+        });
+        let restored = terminal.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.model.lock().selection_changed_at(),
+            )
+        });
+        println!("EPY766 restored={restored:?}; expected prior={reselected:?}");
+        assert_eq!(
+            restored, reselected,
+            "returning to old selection must preserve its own time"
+        );
+    });
+}

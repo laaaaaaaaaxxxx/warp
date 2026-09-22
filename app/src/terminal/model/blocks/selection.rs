@@ -426,7 +426,7 @@ impl BlockList {
                 selection.smart_select_override = Some(override_start..=override_end)
             }
         }
-        self.set_selection(selection);
+        self.set_selection_from_action(selection);
     }
 
     /// Used to update an existing selection's tail to a new BlockListPoint (and an associated `side`).
@@ -440,7 +440,7 @@ impl BlockList {
 
         selection.tail = block_anchor;
 
-        self.set_selection(selection);
+        self.set_selection_from_action(selection);
     }
 
     /// Coordinates an update to the tail of the block-text selection. Returns the BlockListPoint
@@ -495,7 +495,7 @@ impl BlockList {
                     selection.tail.side = Side::Left;
                     selection.head.point = start_anchor;
                     selection.head.side = Side::Right;
-                    self.set_selection(selection);
+                    self.set_selection_from_action(selection);
                     return Some(start_anchor);
                 }
             },
@@ -544,7 +544,7 @@ impl BlockList {
         let mut new_tail_blocklist = BlockListPoint::from_within_block_point(&new_tail, self);
         new_tail_blocklist.row += 0.5.into_lines(); // Endpoints are positioned in the row's vertical center.
         selection.tail.point = new_tail_blocklist;
-        self.set_selection(selection);
+        self.set_selection_from_action(selection);
         Some(new_tail_blocklist)
     }
 
@@ -576,7 +576,7 @@ impl BlockList {
                     selection.head.side = Side::Left;
                     selection.tail.point = end_anchor;
                     selection.tail.side = Side::Right;
-                    self.set_selection(selection);
+                    self.set_selection_from_action(selection);
                     return Some(end_anchor);
                 }
             },
@@ -626,7 +626,7 @@ impl BlockList {
         let mut new_tail_blocklist = BlockListPoint::from_within_block_point(&new_tail, self);
         new_tail_blocklist.row += 0.5.into_lines(); // Endpoints are positioned in the row's vertical center.
         selection.tail.point = new_tail_blocklist;
-        self.set_selection(selection);
+        self.set_selection_from_action(selection);
         Some(new_tail_blocklist)
     }
 
@@ -705,7 +705,7 @@ impl BlockList {
         new_tail_blocklist.row += 0.5.into_lines(); // Endpoints are positioned in the row's vertical center.
         selection.tail.point = new_tail_blocklist;
 
-        self.set_selection(selection);
+        self.set_selection_from_action(selection);
 
         Some(new_tail_blocklist)
     }
@@ -752,7 +752,7 @@ impl BlockList {
         new_tail_blocklist.row += 0.5.into_lines(); // Endpoints are positioned in the row's vertical center.
         selection.tail.point = new_tail_blocklist;
 
-        self.set_selection(selection);
+        self.set_selection_from_action(selection);
 
         Some(new_tail_blocklist)
     }
@@ -892,6 +892,7 @@ impl BlockList {
             self.selection = None;
         }
         self.rich_content_selections = vec![view_id];
+        self.selection_changed_at = Some(chrono::Utc::now().timestamp_millis());
         self.event_proxy
             .send_app_event(TerminalEvent::TextSelectionChanged);
     }
@@ -1242,6 +1243,11 @@ impl BlockList {
                 }
             }
         }
+    }
+
+    fn set_selection_from_action(&mut self, value: BlockListSelection) {
+        self.selection_changed_at = Some(chrono::Utc::now().timestamp_millis());
+        self.set_selection(value);
     }
 
     fn set_selection(&mut self, value: BlockListSelection) {

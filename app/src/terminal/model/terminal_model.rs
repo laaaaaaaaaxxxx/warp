@@ -1876,6 +1876,14 @@ impl TerminalModel {
         self.prompt_block().map(|block| block.prompt_grid())
     }
 
+    pub(crate) fn selection_changed_at(&self) -> Option<i64> {
+        if self.alt_screen_active {
+            self.alt_screen.selection_changed_at
+        } else {
+            self.block_list.selection_changed_at
+        }
+    }
+
     /// Returns **all** selected text across the entire `TerminalView` view hierarchy.
     /// This includes selected text within regular blocks, AI blocks, inline actions, etc.
     pub fn selection_to_string(

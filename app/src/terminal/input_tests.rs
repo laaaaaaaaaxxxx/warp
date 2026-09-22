@@ -10662,3 +10662,50 @@ mod completion_sources_resolution_tests {
         );
     }
 }
+
+#[test]
+fn epy766_input_event_clock() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+        let terminal: ViewHandle<TerminalView> = add_window_with_bootstrapped_terminal(
+            &mut app,
+            None,
+            Some(SessionInfo::new_for_test()),
+        )
+        .await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+        input.update(&mut app, |view, ctx| view.user_insert("same same", ctx));
+        terminal.update(&mut app, |view, ctx| {
+            view.set_input_selection_points(&[(0, 0, 0, 4)], ctx);
+        });
+        let first = input.read(&app, |view, ctx| {
+            (
+                view.editor().as_ref(ctx).selected_text(ctx),
+                view.selection_changed_at,
+            )
+        });
+        println!("EPY766 input first={first:?}");
+        assert_eq!(first.0, "same");
+        assert!(first.1.is_some());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert_eq!(
+            first,
+            input.read(&app, |view, ctx| (
+                view.editor().as_ref(ctx).selected_text(ctx),
+                view.selection_changed_at
+            ))
+        );
+        terminal.update(&mut app, |view, ctx| {
+            view.set_input_selection_points(&[(0, 5, 0, 9)], ctx);
+        });
+        let moved = input.read(&app, |view, ctx| {
+            (
+                view.editor().as_ref(ctx).selected_text(ctx),
+                view.selection_changed_at,
+            )
+        });
+        println!("EPY766 input same text, different range={moved:?}");
+        assert_eq!(moved.0, first.0);
+        assert!(moved.1 > first.1);
+    });
+}

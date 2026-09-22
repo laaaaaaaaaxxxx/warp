@@ -721,7 +721,12 @@ impl CodeReviewView {
     pub fn focused_editor_selection(
         &self,
         ctx: &AppContext,
-    ) -> Option<(LocalOrRemotePath, String, Vec<(usize, usize, usize, usize)>)> {
+    ) -> Option<(
+        LocalOrRemotePath,
+        String,
+        Vec<(usize, usize, usize, usize)>,
+        Option<i64>,
+    )> {
         let focused = ctx.focused_view_id(self.window_id)?;
         let CodeReviewViewState::Loaded(state) = self.state() else {
             return None;
@@ -738,7 +743,12 @@ impl CodeReviewView {
             let text = code_editor.as_ref(ctx).selected_text(ctx)?;
             let ranges = code_editor.as_ref(ctx).selection_lsp_ranges(ctx);
             let file_path = repo_path.join(&file_state.file_diff.file_path);
-            return Some((file_path, text, ranges));
+            return Some((
+                file_path,
+                text,
+                ranges,
+                code_editor.as_ref(ctx).selection_changed_at(ctx),
+            ));
         }
         None
     }

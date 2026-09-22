@@ -266,6 +266,7 @@ pub enum AgentTranscriptNavigableItem {
 }
 
 pub struct BlockList {
+    pub(crate) selection_changed_at: Option<i64>,
     blocks: Vec<Block>,
     block_heights: SumTree<BlockHeightItem>,
     block_id_to_block_index: FxHashMap<BlockId, BlockIndex>,
@@ -686,6 +687,7 @@ impl BlockList {
             max_grid_size_limit: sizes.max_block_scroll_limit,
             event_proxy: event_proxy.clone(),
             selection: None,
+            selection_changed_at: None,
             rich_content_selections: Vec::new(),
             smart_select_override: None,
             bootstrap_stage,

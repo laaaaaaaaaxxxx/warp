@@ -698,6 +698,15 @@ impl CodeView {
         })
     }
 
+    pub(crate) fn active_selection_changed_at(&self, ctx: &AppContext) -> Option<i64> {
+        let tab = self.tab_at(self.active_tab_index)?;
+        tab.editor_view
+            .as_ref(ctx)
+            .editor()
+            .as_ref(ctx)
+            .selection_changed_at(ctx)
+    }
+
     /// Returns the active tab's selection ranges as 0-indexed LSP positions.
     /// Known boundary: only the active tab is read, matching `selected_text` and
     /// `active_cursor_position` -- selections in this pane's other open tabs are

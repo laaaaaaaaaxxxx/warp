@@ -87,3 +87,85 @@ fn test_interaction_state_prevents_editing() {
         assert_eq!(text.as_str(), "abc");
     });
 }
+
+#[test]
+fn epy766_editor_event_clock() {
+    App::test((), |mut app| async move {
+        let (_, editor) = initialize_editor(&mut app);
+        editor.update(&mut app, |view, ctx| {
+            view.handle_action(
+                &CodeEditorViewAction::UserTyped(UserInput::new("same same")),
+                ctx,
+            );
+            view.set_selection_lsp_ranges(&[(0, 0, 0, 4)], ctx);
+        });
+        let first = editor.read(&app, |view, ctx| {
+            (view.selected_text(ctx), view.selection_changed_at(ctx))
+        });
+        println!("EPY766 editor first={first:?}");
+        assert_eq!(first.0.as_deref(), Some("same"));
+        assert!(first.1.is_some());
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        assert_eq!(
+            first,
+            editor.read(&app, |view, ctx| (
+                view.selected_text(ctx),
+                view.selection_changed_at(ctx)
+            ))
+        );
+        editor.update(&mut app, |view, ctx| {
+            view.set_selection_lsp_ranges(&[(0, 5, 0, 9)], ctx);
+        });
+        let moved = editor.read(&app, |view, ctx| {
+            (view.selected_text(ctx), view.selection_changed_at(ctx))
+        });
+        println!("EPY766 editor same text, different range={moved:?}");
+        assert_eq!(moved.0, first.0);
+        assert!(moved.1 > first.1);
+        editor.update(&mut app, |view, ctx| view.clear_selection(ctx));
+        assert!(
+            editor
+                .read(&app, |view, ctx| view.selected_text(ctx))
+                .is_none()
+        );
+    });
+}
+
+#[test]
+fn epy766_passive_editor_append_keeps_selection_time() {
+    App::test((), |mut app| async move {
+        let (_, editor) = initialize_editor(&mut app);
+        editor.update(&mut app, |view, ctx| {
+            view.handle_action(
+                &CodeEditorViewAction::UserTyped(UserInput::new("same same")),
+                ctx,
+            );
+            view.set_selection_lsp_ranges(&[(0, 0, 0, 4)], ctx);
+        });
+        let before = editor.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.selection_lsp_ranges(ctx),
+                view.selection_changed_at(ctx),
+            )
+        });
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        editor.update(&mut app, |view, ctx| {
+            view.model
+                .update(ctx, |model, ctx| model.append_at_end(" background", ctx));
+        });
+        let after = editor.read(&app, |view, ctx| {
+            (
+                view.selected_text(ctx),
+                view.selection_lsp_ranges(ctx),
+                view.selection_changed_at(ctx),
+            )
+        });
+        println!("EPY766 passive editor append before={before:?}, after={after:?}");
+        assert_eq!(before.0.as_deref(), Some("same"));
+        assert_eq!(
+            before, after,
+            "background content changes are not selection actions"
+        );
+    });
+}

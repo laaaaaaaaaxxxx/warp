@@ -23,6 +23,7 @@ mod tests;
 
 /// A generic selection and navigation model for text editors.
 pub struct SelectionModel {
+    pub selected_at: Option<instant::SystemTime>,
     render: ModelHandle<RenderState>,
     content: ModelHandle<Buffer>,
     selection_model: ModelHandle<BufferSelectionModel>,
@@ -113,6 +114,7 @@ impl SelectionModel {
             selection_model,
             goal_xs: None,
             pending_selection: None,
+            selected_at: None,
             hidden_lines,
             allow_hidden_navigation: true,
         }
@@ -470,6 +472,7 @@ impl SelectionModel {
         // Horizontal movement resets the goal column. If this is called by a vertical movement
         // action, it will save the new goal afterwards.
         self.goal_xs = None;
+        self.selected_at = Some(instant::SystemTime::now());
         let selection_model = self.selection_model.clone();
         self.content.update(ctx, |content, ctx| {
             content.update_selection(selection_model, action, autoscroll, ctx)
