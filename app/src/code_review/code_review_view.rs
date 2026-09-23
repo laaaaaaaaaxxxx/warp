@@ -674,6 +674,13 @@ pub struct CodeReviewView {
     github_repo_model: Option<ModelHandle<GitHubRepoModel>>,
 }
 
+type FocusedCodeReviewSelection = (
+    LocalOrRemotePath,
+    String,
+    Vec<(usize, usize, usize, usize)>,
+    Option<i64>,
+);
+
 impl CodeReviewView {
     pub fn repo_path(&self) -> Option<&LocalOrRemotePath> {
         self.active_repo.as_ref().map(|repo| &repo.repo_path)
@@ -718,15 +725,7 @@ impl CodeReviewView {
     /// ranges are 0-indexed LSP positions. Same access chain and same focus
     /// filter as `focused_editor_cursor`; returns `None` when no diff editor is
     /// focused or the focused one has no selection.
-    pub fn focused_editor_selection(
-        &self,
-        ctx: &AppContext,
-    ) -> Option<(
-        LocalOrRemotePath,
-        String,
-        Vec<(usize, usize, usize, usize)>,
-        Option<i64>,
-    )> {
+    pub fn focused_editor_selection(&self, ctx: &AppContext) -> Option<FocusedCodeReviewSelection> {
         let focused = ctx.focused_view_id(self.window_id)?;
         let CodeReviewViewState::Loaded(state) = self.state() else {
             return None;

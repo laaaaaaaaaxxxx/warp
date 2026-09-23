@@ -10,9 +10,10 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use clap_complete::aot::Shell;
 use commands::{
     run_action_catalog_command, run_app_command, run_appearance_command, run_capability_command,
-    run_code_command, run_file_command, run_input_command, run_instance_command, run_keybinding_command,
-    run_pane_command, run_selection_command, run_session_command, run_setting_command,
-    run_surface_command, run_tab_command, run_theme_command, run_window_command,
+    run_code_command, run_file_command, run_input_command, run_instance_command,
+    run_keybinding_command, run_pane_command, run_selection_command, run_session_command,
+    run_setting_command, run_surface_command, run_tab_command, run_theme_command,
+    run_window_command,
 };
 use completions::generate_completions_to_stdout;
 use output::write_control_error;

@@ -18,12 +18,12 @@ use crate::local_control::output::{write_json, write_json_line};
 use crate::local_control::selectors::{instance_selector, target_selector};
 use crate::local_control::{
     ActionCatalogCommand, AppCommand, AppearanceCommand, CapabilityCommand, CodeCommand,
-    CodeLspCommand, CodeNavigateCommand, FileCommand,
-    InputCommand, InstanceCommand, KeybindingCommand, PaneCommand, SelectionCommand,
-    SessionCommand, SettingCommand, SurfaceCommand, SurfaceOpenCommand, SurfaceOpenToggleCommand,
-    SurfaceQueryCommand, SurfaceRightPanelCommand, SurfaceSettingsCommand, SurfaceToggleCommand,
-    TabActivateArgs, TabCloseArgs, TabColorCommand, TabCommand, TabGroupCommand, TargetArgs,
-    ThemeCommand, WindowCommand,
+    CodeLspCommand, CodeNavigateCommand, FileCommand, InputCommand, InstanceCommand,
+    KeybindingCommand, PaneCommand, SelectionCommand, SessionCommand, SettingCommand,
+    SurfaceCommand, SurfaceOpenCommand, SurfaceOpenToggleCommand, SurfaceQueryCommand,
+    SurfaceRightPanelCommand, SurfaceSettingsCommand, SurfaceToggleCommand, TabActivateArgs,
+    TabCloseArgs, TabColorCommand, TabCommand, TabGroupCommand, TargetArgs, ThemeCommand,
+    WindowCommand,
 };
 
 pub(super) fn run_surface_command(

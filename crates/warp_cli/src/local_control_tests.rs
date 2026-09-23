@@ -793,9 +793,7 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
         },
         ControlCommand::Code(command) => match command {
             crate::local_control::CodeCommand::Lsp(command) => match command {
-                crate::local_control::CodeLspCommand::Enable(_) => {
-                    Some(ActionKind::CodeLspEnable)
-                }
+                crate::local_control::CodeLspCommand::Enable(_) => Some(ActionKind::CodeLspEnable),
             },
             crate::local_control::CodeCommand::Navigate(command) => match command {
                 crate::local_control::CodeNavigateCommand::Back(_) => {

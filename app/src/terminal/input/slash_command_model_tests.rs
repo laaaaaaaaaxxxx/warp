@@ -696,7 +696,10 @@ fn test_slash_menu_slice_keys_off_the_recorded_trigger() {
 #[test]
 fn test_slash_menu_slice_is_the_whole_buffer_without_a_trigger() {
     // No record: upstream's rule. A dropped-in path stays a path for the classifier to reject.
-    assert_eq!(slash_menu_slice("/root/project/warp", None), "/root/project/warp");
+    assert_eq!(
+        slash_menu_slice("/root/project/warp", None),
+        "/root/project/warp"
+    );
     assert_eq!(slash_menu_slice("dwada", None), "dwada");
 }
 

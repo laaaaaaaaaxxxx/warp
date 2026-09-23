@@ -321,8 +321,9 @@ fn code_lsp_enable(
     target: &TargetSelector,
     ctx: &mut ModelContext<LocalControlBridge>,
 ) -> Result<serde_json::Value, ControlError> {
-    use crate::settings_view::{CodeIndexingPageAction, SettingsAction};
     use lsp::supported_servers::LSPServerType;
+
+    use crate::settings_view::{CodeIndexingPageAction, SettingsAction};
 
     let action = ActionKind::CodeLspEnable;
     let LspEnableParams {
@@ -443,8 +444,9 @@ fn right_panel_width_state(
     window_id: WindowId,
     ctx: &mut ModelContext<LocalControlBridge>,
 ) -> Result<ResizableStateHandle, ControlError> {
-    use crate::terminal::resizable_data::{ModalType, ResizableData};
     use warpui::SingletonEntity;
+
+    use crate::terminal::resizable_data::{ModalType, ResizableData};
 
     let resizable_data = ResizableData::handle(ctx);
     resizable_data
@@ -699,8 +701,9 @@ fn pane_move(
     let workspace = target_workspace(action_kind, target, ctx)?;
     let source_group = target_pane_group(action_kind, target, ctx)?;
     let pane_id = target_pane_id(action_kind, target, &source_group, ctx)?;
-    let source_tab_index =
-        workspace.read(ctx, |workspace, ctx| tab_index_from_target(target, workspace, ctx))?;
+    let source_tab_index = workspace.read(ctx, |workspace, ctx| {
+        tab_index_from_target(target, workspace, ctx)
+    })?;
 
     let destination_group = match &decoded.destination {
         PaneMoveDestination::NewTab => None,
@@ -723,7 +726,10 @@ fn pane_move(
             if found.id() == source_group.id() {
                 return Err(ControlError::new(
                     ErrorCode::InvalidParams,
-                    format!("{} was given the tab the pane is already in", action_kind.as_str()),
+                    format!(
+                        "{} was given the tab the pane is already in",
+                        action_kind.as_str()
+                    ),
                 ));
             }
             Some(found)
@@ -744,10 +750,9 @@ fn pane_move(
         };
         match destination_group.as_ref() {
             Some(group) => {
-                let seated =
-                    group.update(ctx, |group, ctx| {
-                        group.add_pane_for_move(pane, None, direction, ctx)
-                    });
+                let seated = group.update(ctx, |group, ctx| {
+                    group.add_pane_for_move(pane, None, direction, ctx)
+                });
                 if seated.is_none() {
                     return Err(ControlError::new(
                         ErrorCode::Internal,
@@ -761,9 +766,8 @@ fn pane_move(
             }
             None => {
                 let new_index = (source_tab_index + 1).min(workspace.tab_count());
-                let landed = workspace.add_tab_from_existing_pane_with_activation(
-                    pane, new_index, None, false, ctx,
-                );
+                let landed = workspace
+                    .add_tab_from_existing_pane_with_activation(pane, new_index, None, false, ctx);
                 workspace
                     .get_pane_group_view(landed)
                     .map(|view| view.id().to_string())

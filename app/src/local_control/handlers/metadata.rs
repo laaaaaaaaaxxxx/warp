@@ -487,6 +487,8 @@ pub(crate) fn tab_inspect(
     }))
 }
 
+type TabGroupFields = (Option<String>, Option<String>, Option<bool>);
+
 /// Group identity for one tab: the opaque group id plus the label a person can
 /// recognize it by, and whether that group is collapsed.
 ///
@@ -498,7 +500,7 @@ fn tab_group_fields(
     entry: &TabEntry,
     action: ActionKind,
     ctx: &mut ModelContext<LocalControlBridge>,
-) -> Result<(Option<String>, Option<String>, Option<bool>), ControlError> {
+) -> Result<TabGroupFields, ControlError> {
     let Some(workspace) = workspace_for_window(entry.window_id, action, ctx)? else {
         return Ok((None, None, None));
     };
@@ -679,12 +681,7 @@ pub(crate) fn pane_list(
                 }
             }
         }
-        let mut cr_selection: Option<(
-            LocalOrRemotePath,
-            String,
-            Vec<(usize, usize, usize, usize)>,
-            Option<i64>,
-        )> = None;
+        let mut cr_selection = None;
         if is_active && let Some(cr_views) = ctx.views_of_type::<CodeReviewView>(entry.window_id) {
             for cr in cr_views {
                 cr_selection = cr.read(ctx, |cr, cx| cr.focused_editor_selection(cx));
@@ -783,9 +780,9 @@ pub(crate) fn pane_list(
         // side (`pane.resize --axis/--size`) speaks the same unit, so a value
         // read here can be handed straight back. Takes the mutable context the
         // element-position lookup requires, so it cannot ride the `.read()` above.
-        let pane_size = entry
-            .pane_group
-            .update(ctx, |pane_group, cx| pane_group.pane_size_by_id(entry.pane_id, cx));
+        let pane_size = entry.pane_group.update(ctx, |pane_group, cx| {
+            pane_group.pane_size_by_id(entry.pane_id, cx)
+        });
         panes.push(json!({
             "pane_id": entry.pane_id.to_string(),
             "tab_id": entry.tab_id,
