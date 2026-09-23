@@ -25,11 +25,11 @@ use crate::local_control::resolver::{require_active_window_id_for_action, worksp
 use crate::pane_group::PaneId;
 use crate::settings::{AccessibilitySettings, FontSettings, InputSettings, ThemeSettings};
 use crate::tab::SelectedTabColor;
-use crate::workspace::{Workspace, WorkspaceAction};
-use crate::workspace::tab_group::TabGroupId;
 use crate::themes::theme::{SelectedSystemThemes, ThemeKind};
 use crate::user_config::WarpConfig;
 use crate::window_settings::ZoomLevel;
+use crate::workspace::tab_group::TabGroupId;
+use crate::workspace::{Workspace, WorkspaceAction};
 
 pub(crate) fn tab_rename(
     instance_id: &Option<InstanceId>,
@@ -431,12 +431,8 @@ pub(crate) fn tab_group_move_tab(
 ) -> Result<serde_json::Value, ControlError> {
     let TabGroupMoveParams { destination_tab } = action.params_as()?;
     let entry = select_single_tab_entry(target, ActionKind::TabGroupMoveTab, ctx)?;
-    let destination = destination_tab_entry(
-        &destination_tab,
-        target,
-        ActionKind::TabGroupMoveTab,
-        ctx,
-    )?;
+    let destination =
+        destination_tab_entry(&destination_tab, target, ActionKind::TabGroupMoveTab, ctx)?;
     if destination.pane_group.id() == entry.pane_group.id() {
         return Err(ControlError::new(
             ErrorCode::InvalidParams,

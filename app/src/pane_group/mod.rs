@@ -7283,7 +7283,11 @@ impl PaneGroup {
             let session_id = terminal_view.active_block_session_id()?;
             let session = terminal_view.sessions_model().as_ref(ctx).get(session_id)?;
             (session.ssh_destination()? == destination)
-                .then(|| session.ssh_control_socket().map(std::path::Path::to_path_buf))
+                .then(|| {
+                    session
+                        .ssh_control_socket()
+                        .map(std::path::Path::to_path_buf)
+                })
                 .flatten()
         })
     }

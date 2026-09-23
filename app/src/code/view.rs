@@ -843,11 +843,11 @@ impl CodeView {
         let Some(now) = self.current_nav_location(ctx) else {
             return;
         };
-        if let Some(prev) = self.nav_current.take() {
-            if Self::justifies_new_entry(&prev, &now) {
-                self.push_back_entry(prev);
-                self.nav_forward.clear();
-            }
+        if let Some(prev) = self.nav_current.take()
+            && Self::justifies_new_entry(&prev, &now)
+        {
+            self.push_back_entry(prev);
+            self.nav_forward.clear();
         }
         self.nav_current = Some(now);
     }
@@ -884,7 +884,10 @@ impl CodeView {
         self.nav_navigating = true;
         // 只负责把 tab 落对；行列交给下面那句，避免同一件事设两次
         self.open_or_focus_existing(Some(target.location.clone()), None, ctx);
-        if let Some(editor) = self.tab_at(self.active_tab_index).map(|tab| &tab.editor_view) {
+        if let Some(editor) = self
+            .tab_at(self.active_tab_index)
+            .map(|tab| &tab.editor_view)
+        {
             editor.update(ctx, |editor, ctx| {
                 editor.jump_to_line_column(
                     target.line_col.line_num,
@@ -914,7 +917,11 @@ impl CodeView {
         let Some(target) = self.nav_back.pop() else {
             return;
         };
-        if let Some(current) = self.nav_current.take().or_else(|| self.current_nav_location(ctx)) {
+        if let Some(current) = self
+            .nav_current
+            .take()
+            .or_else(|| self.current_nav_location(ctx))
+        {
             self.nav_forward.push(current);
         }
         self.apply_nav(target, ctx);
@@ -924,7 +931,11 @@ impl CodeView {
         let Some(target) = self.nav_forward.pop() else {
             return;
         };
-        if let Some(current) = self.nav_current.take().or_else(|| self.current_nav_location(ctx)) {
+        if let Some(current) = self
+            .nav_current
+            .take()
+            .or_else(|| self.current_nav_location(ctx))
+        {
             self.push_back_entry(current);
         }
         self.apply_nav(target, ctx);
@@ -2530,7 +2541,6 @@ impl TypedActionView for CodeView {
             CodeViewAction::CloseSaved => {
                 self.close_saved_tabs(ctx);
             }
-
 
             CodeViewAction::ToggleMaximized => {
                 ctx.emit(CodeViewEvent::Pane(PaneEvent::ToggleMaximized));

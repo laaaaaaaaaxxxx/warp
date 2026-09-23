@@ -178,6 +178,7 @@ pub fn add_tui_history_test_models(
             builtins: HashSet::new(),
             keywords: Vec::new(),
             is_ssh_wrapper_session: IsSSHWrapperSession::No,
+            ssh_destination: None,
             home_dir: None,
             cdpath: None,
             editor: None,

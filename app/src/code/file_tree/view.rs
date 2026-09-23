@@ -355,8 +355,7 @@ impl FileTreeView {
             self.subscribe_to_active_file_model(ctx);
             self.subscribe_to_code_settings(ctx);
             self.show_hidden_files = *CodeSettings::as_ref(ctx).show_hidden_files;
-            self.extra_hidden_names =
-                CodeSettings::as_ref(ctx).file_tree_hidden_names.clone();
+            self.extra_hidden_names = CodeSettings::as_ref(ctx).file_tree_hidden_names.clone();
 
             // Catch up on any repository/file changes that happened while inactive.
             // Skip remote-backed roots — their data comes from server pushes,
@@ -672,8 +671,7 @@ impl FileTreeView {
                 ctx.notify();
             }
             if let CodeSettingsChangedEvent::FileTreeHiddenNames { .. } = event {
-                me.extra_hidden_names =
-                    CodeSettings::as_ref(ctx).file_tree_hidden_names.clone();
+                me.extra_hidden_names = CodeSettings::as_ref(ctx).file_tree_hidden_names.clone();
                 me.rebuild_flattened_items();
                 ctx.notify();
             }
