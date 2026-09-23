@@ -316,8 +316,15 @@ fn load_language(lang: &str) -> Option<Language> {
         })
         .collect();
 
-    let highlight_query_str = get_arborium_highlight_query(lang)?;
-    let highlight_query = Query::new(&grammar, highlight_query_str)
+    let mut highlight_query_str = Cow::Borrowed(get_arborium_highlight_query(lang)?);
+    if lang == "markdown" {
+        highlight_query_str = Cow::Owned(format!(
+            "{highlight_query_str}\n{}",
+            r#"((paragraph (inline) @comment.markdown_key @type.markdown_value)
+ (#match? @comment.markdown_key ":"))"#
+        ));
+    }
+    let highlight_query = Query::new(&grammar, &highlight_query_str)
         .expect("arborium highlight query should be valid");
 
     let indents_query_path = [lang, "indents.scm"].join("\\");

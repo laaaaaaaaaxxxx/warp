@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::iter;
 use std::ops::Range;
 
@@ -20,6 +21,8 @@ pub struct ColorMap {
     pub comment_color: ColorU,
     pub property_color: ColorU,
     pub tag_color: ColorU,
+    pub markdown_key_color: ColorU,
+    pub markdown_value_color: ColorU,
 }
 
 /// Query for retrieving syntax highlighting information on the tokens.
@@ -56,19 +59,40 @@ impl HighlightQuery {
 
         while let Some(matches) = captures.next() {
             for cap in matches.0.captures {
-                let insertion_range = cap.node.byte_range();
+                let capture_name = query.capture_names()[cap.index as usize];
+                let node_range = cap.node.byte_range();
+                let insertion_ranges = match capture_name {
+                    "comment.markdown_key" | "type.markdown_value" => {
+                        let bytes: Vec<_> = TextBuffer(buffer)
+                            .text(cap.node)
+                            .flatten()
+                            .copied()
+                            .collect();
+                        let text = std::str::from_utf8(&bytes).expect("inline text is UTF-8");
+                        Cow::Owned(markdown_field_ranges(
+                            text,
+                            cap.node.start_byte(),
+                            capture_name == "comment.markdown_key",
+                        ))
+                    }
+                    _ => Cow::Borrowed(std::slice::from_ref(&node_range)),
+                };
                 let color = self
                     .highlight_map
                     .get(cap.index as usize)
                     .and_then(|inner| *inner);
 
                 if let Some(color) = color {
-                    let char_start =
-                        ByteOffset::from(insertion_range.start).to_buffer_char_offset(buffer);
-                    let char_end =
-                        ByteOffset::from(insertion_range.end).to_buffer_char_offset(buffer);
-                    if char_start < char_end {
-                        range_map.insert(char_start..char_end, color);
+                    for insertion_range in insertion_ranges.iter() {
+                        let char_start = ByteOffset::from(insertion_range.start + 1)
+                            .to_buffer_char_offset(buffer)
+                            - 1;
+                        let char_end = ByteOffset::from(insertion_range.end + 1)
+                            .to_buffer_char_offset(buffer)
+                            - 1;
+                        if char_start < char_end {
+                            range_map.insert(char_start..char_end, color);
+                        }
                     }
                 }
             }
@@ -78,8 +102,37 @@ impl HighlightQuery {
     }
 }
 
+fn markdown_field_ranges(text: &str, start: usize, key: bool) -> Vec<Range<usize>> {
+    text.split_inclusive('\n')
+        .scan(start, |offset, line| {
+            let start = *offset;
+            *offset += line.len();
+            Some((start, line.trim_end()))
+        })
+        .filter_map(|(start, line)| {
+            let (name, value) = line.split_once(':')?;
+            let first = name.trim_start().chars().next()?;
+            if !(first.is_alphabetic() || first == '_')
+                || !name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ' ' | '\t'))
+                || value.starts_with("//")
+            {
+                return None;
+            }
+            Some(if key {
+                start + name.len() - name.trim_start().len()..start + name.trim_end().len()
+            } else {
+                start + name.len() + 1 + value.len() - value.trim_start().len()..start + line.len()
+            })
+        })
+        .collect()
+}
+
 fn convert_capture_name_to_color(name: &str, color_map: &ColorMap) -> Option<ColorU> {
     match name {
+        "comment.markdown_key" => return Some(color_map.markdown_key_color),
+        "type.markdown_value" => return Some(color_map.markdown_value_color),
         "text.title" => return Some(color_map.keyword_color),
         "text.literal" => return Some(color_map.string_color),
         "text.uri" => return Some(color_map.function_color),
@@ -132,9 +185,14 @@ impl<'a> TextProvider<&'a [u8]> for TextBuffer<'a> {
 
     fn text(&mut self, node: Node) -> Self::I {
         let range = node.range();
+        // Tree-sitter excludes the buffer's leading marker from its byte offsets.
         self.0.bytes_in_range(
-            ByteOffset::from(range.start_byte),
-            ByteOffset::from(range.end_byte),
+            ByteOffset::from(range.start_byte + 1),
+            ByteOffset::from(range.end_byte + 1),
         )
     }
 }
+
+#[cfg(test)]
+#[path = "highlight_query_tests.rs"]
+mod tests;

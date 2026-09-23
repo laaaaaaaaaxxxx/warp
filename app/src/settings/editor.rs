@@ -4,7 +4,9 @@ use enum_iterator::{Sequence, all};
 use serde::{Deserialize, Serialize};
 use settings::macros::define_settings_group;
 use settings::{RespectUserSyncSetting, Setting as _, SupportedPlatforms, SyncToCloud};
+use warp_core::ui::color::hex_color;
 use warpui::ModelContext;
+use warpui::color::ColorU;
 
 #[derive(
     Clone,
@@ -178,7 +180,51 @@ impl WarpPromptSeparator {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MarkdownKeyValuePalette {
+    #[serde(rename = "before_colon", with = "hex_color")]
+    #[schemars(with = "String")]
+    pub key: ColorU,
+    #[serde(rename = "after_colon", with = "hex_color")]
+    #[schemars(with = "String")]
+    pub value: ColorU,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MarkdownKeyValueColors {
+    pub light: MarkdownKeyValuePalette,
+    pub dark: MarkdownKeyValuePalette,
+}
+
+impl settings_value::SettingsValue for MarkdownKeyValueColors {}
+
+impl Default for MarkdownKeyValueColors {
+    fn default() -> Self {
+        Self {
+            light: MarkdownKeyValuePalette {
+                key: ColorU::new(150, 133, 49, 255),
+                value: ColorU::new(171, 109, 93, 255),
+            },
+            dark: MarkdownKeyValuePalette {
+                key: ColorU::new(214, 189, 113, 255),
+                value: ColorU::new(226, 163, 145, 255),
+            },
+        }
+    }
+}
+
 define_settings_group!(AppEditorSettings, settings: [
+    markdown_key_value_colors: MarkdownKeyValueColorsSetting {
+        type: MarkdownKeyValueColors,
+        default: MarkdownKeyValueColors::default(),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        surface: settings::SettingSurfaces::ALL,
+        private: false,
+        toml_path: "code.editor.markdown.colors",
+        description: "Colors before and after the first colon on matching Markdown lines, with separate light and dark palettes.",
+    },
+
     cursor_blink: CursorBlinkEnabled {
         type: CursorBlink,
         default: CursorBlink::default(),
