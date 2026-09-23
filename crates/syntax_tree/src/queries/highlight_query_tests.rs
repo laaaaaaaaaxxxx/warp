@@ -100,3 +100,30 @@ fn python_colons_keep_python_highlighting() {
         Vec::<String>::new(),
     );
 }
+
+#[test]
+fn markdown_preserves_times_in_prose() {
+    let source = "- 不并入 22:00 软提醒——职能不同：软提醒报强杀倒计时，这条裁入睡方式\n- 22:00\n- 明天 9:05 提醒\n- 开放 19:00–23:00\n- 午夜 0:00\n- 结束 23:59\n";
+    assert!(highlighted_text("markdown", source, ColorU::new(50, 60, 70, 255)).is_empty());
+    assert!(highlighted_text("markdown", source, ColorU::new(80, 90, 100, 255)).is_empty());
+}
+
+#[test]
+fn markdown_preserves_fields_with_time_values_and_numeric_keys() {
+    let source = "- 时间: 22:00\n- version2: stable\n- version2:30\n- 编号 24:00\n- 编号 9:60\n- 编号 123:45\n";
+    assert_eq!(
+        highlighted_text("markdown", source, ColorU::new(50, 60, 70, 255)),
+        vec![
+            "时间",
+            "version2",
+            "version2",
+            "编号 24",
+            "编号 9",
+            "编号 123"
+        ],
+    );
+    assert_eq!(
+        highlighted_text("markdown", source, ColorU::new(80, 90, 100, 255)),
+        vec!["22:00", "stable", "30", "00", "60", "45"],
+    );
+}
