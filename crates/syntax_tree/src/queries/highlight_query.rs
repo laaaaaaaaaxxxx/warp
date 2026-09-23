@@ -111,8 +111,16 @@ fn markdown_field_ranges(text: &str, start: usize, key: bool) -> Vec<Range<usize
         })
         .filter_map(|(start, line)| {
             let (name, value) = line.split_once(':')?;
+            let is_time = name.split_whitespace().next_back().is_some_and(|hour| {
+                let minute = value.split(|c: char| !c.is_ascii_digit()).next().unwrap();
+                (1..=2).contains(&hour.len())
+                    && hour.parse::<u8>().is_ok_and(|h| h < 24)
+                    && minute.len() == 2
+                    && minute.parse::<u8>().is_ok_and(|m| m < 60)
+            });
             let first = name.trim_start().chars().next()?;
-            if !(first.is_alphabetic() || first == '_')
+            if is_time
+                || !(first.is_alphabetic() || first == '_')
                 || !name
                     .chars()
                     .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ' ' | '\t'))
