@@ -21,7 +21,7 @@ fn highlighted_text(language: &str, source: &'static str, color: ColorU) -> Vec<
             );
         });
         let snapshot = buffer.read(&app, |buffer, _| buffer.buffer_snapshot());
-        let tree = SyntaxTreeState::parse_text(snapshot, None, &language)
+        let trees = SyntaxTreeState::parse_text(snapshot, None, &language)
             .await
             .unwrap();
         let other = ColorU::new(0, 0, 0, 255);
@@ -46,7 +46,7 @@ fn highlighted_text(language: &str, source: &'static str, color: ColorU) -> Vec<
                     CharOffset::zero()..CharOffset::from(source.chars().count()),
                     &language.highlight_query,
                     buffer,
-                    &tree,
+                    &trees.host,
                 )
                 .iter()
                 .filter(|(_, actual)| **actual == color)

@@ -217,6 +217,8 @@ pub struct Language {
     pub bracket_pairs: Vec<(char, char)>,
     /// Query for parsing symbols.
     pub symbols_query: Option<Query>,
+    /// Query for code embedded in another language, e.g. fenced code blocks in Markdown.
+    pub injections_query: Option<Query>,
     /// Display name for the language.
     pub display_name: String,
 }
@@ -333,6 +335,11 @@ fn load_language(lang: &str) -> Option<Language> {
     let symbols_query_path = [lang, "identifiers.scm"].join("\\");
     let symbols_query = load_query(&symbols_query_path, &grammar);
 
+    let injections_query = (lang == "markdown").then(|| {
+        Query::new(&grammar, arborium::lang_markdown::INJECTIONS_QUERY)
+            .expect("arborium injections query should be valid")
+    });
+
     Some(Language {
         highlight_query,
         indents_query,
@@ -341,6 +348,7 @@ fn load_language(lang: &str) -> Option<Language> {
         comment_prefix,
         bracket_pairs,
         symbols_query,
+        injections_query,
         display_name: config.display_name,
     })
 }

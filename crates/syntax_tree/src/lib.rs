@@ -1,3 +1,4 @@
+mod injections;
 mod queries;
 use std::cell::{Ref, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -5,6 +6,7 @@ use std::sync::Arc;
 
 use arborium::tree_sitter::{InputEdit, Parser, Tree};
 use futures::stream::AbortHandle;
+use injections::Injection;
 use languages::Language;
 use parking_lot::Mutex;
 use queries::highlight_query::HighlightQuery;
@@ -39,6 +41,13 @@ pub enum DecorationStateEvent {
 struct LanguageQueries {
     language: Arc<Language>,
     syntax_query: HighlightQuery,
+}
+
+/// Syntax trees for one buffer version: the host language and the code embedded in it.
+#[derive(Clone)]
+struct SyntaxTrees {
+    host: Tree,
+    injections: Vec<Injection>,
 }
 
 /// Single-entry cache for highlight queries.
@@ -77,7 +86,7 @@ impl HighlightCacheKey {
 /// The updates are computed asynchronously and we notify the editor model upon completion via
 /// DecorationUpdated event.
 pub struct SyntaxTreeState {
-    syntax_tree: Mutex<HashMap<BufferVersion, Tree>>,
+    syntax_tree: Mutex<HashMap<BufferVersion, SyntaxTrees>>,
     language_queries: Option<LanguageQueries>,
     buffer_version: BufferVersion,
     color_map: ColorMap,
@@ -160,8 +169,9 @@ impl SyntaxTreeState {
 
         // Cache miss - compute highlights
         let mut syntax_tree_lock = self.syntax_tree.lock();
-        let tree = syntax_tree_lock.get(&buffer_version)?;
+        let trees = syntax_tree_lock.get(&buffer_version)?;
         let buffer = self.buffer_handle.upgrade(ctx)?;
+        let buffer = buffer.as_ref(ctx);
         let language_queries = self.language_queries.as_ref()?;
 
         let mut combined_highlights = RangeMap::new();
@@ -171,13 +181,33 @@ impl SyntaxTreeState {
             let highlights = language_queries.syntax_query.get_highlighted_chunks(
                 range.clone(),
                 &language_queries.language.highlight_query,
-                buffer.as_ref(ctx),
-                tree,
+                buffer,
+                &trees.host,
             );
 
             // Merge the highlights into the combined map
             for (highlight_range, color) in highlights.iter() {
                 combined_highlights.insert(highlight_range.clone(), *color);
+            }
+        }
+
+        // Embedded code replaces the host's highlighting of it with its own language's, built
+        // from the current color map so it follows theme changes like the host does.
+        for injection in &trees.injections {
+            for char_range in injection.char_ranges(buffer) {
+                combined_highlights.remove(char_range);
+            }
+            let query = HighlightQuery::new(&injection.language.highlight_query, self.color_map);
+            for range in ranges.iter() {
+                let highlights = query.get_highlighted_chunks(
+                    range.clone(),
+                    &injection.language.highlight_query,
+                    buffer,
+                    &injection.tree,
+                );
+                for (highlight_range, color) in highlights.iter() {
+                    combined_highlights.insert(highlight_range.clone(), *color);
+                }
             }
         }
 
@@ -208,13 +238,13 @@ impl SyntaxTreeState {
     /// Given a point in buffer, return the absolute indentation level the point should have.
     pub fn indentation_at_point(&self, point: Point, ctx: &AppContext) -> Option<IndentDelta> {
         let syntax_tree_lock = self.syntax_tree.lock();
-        let tree = syntax_tree_lock.get(&self.buffer_version)?;
+        let trees = syntax_tree_lock.get(&self.buffer_version)?;
         let buffer = self.buffer_handle.upgrade(ctx)?;
         let language_queries = self.language_queries.as_ref()?;
 
         indentation_delta(
             buffer.as_ref(ctx),
-            tree,
+            &trees.host,
             point,
             language_queries.language.indents_query.as_ref()?,
         )
@@ -227,7 +257,7 @@ impl SyntaxTreeState {
         content: BufferSnapshot,
         old_tree: Option<Tree>,
         language: &Language,
-    ) -> Option<Tree> {
+    ) -> Option<SyntaxTrees> {
         if content.byte_len() > MAX_PARSE_BYTES {
             return None;
         }
@@ -242,9 +272,21 @@ impl SyntaxTreeState {
                 bytes.seek(ByteOffset::from(byte_offset + 1));
                 bytes.next().unwrap_or_default()
             };
-            parser
+            let host = parser
                 .parse_with_options(&mut callback, old_tree.as_ref(), None)
-                .expect("Should succeed")
+                .expect("Should succeed");
+
+            let injections = match &language.injections_query {
+                Some(query) => {
+                    // Skip the buffer's leading marker so indices match tree-sitter's offsets.
+                    let mut bytes = content.bytes();
+                    bytes.seek(ByteOffset::from(1));
+                    let text: Vec<u8> = bytes.flatten().copied().collect();
+                    injections::parse_injections(&mut parser, &text, &host, query)
+                }
+                None => Vec::new(),
+            };
+            SyntaxTrees { host, injections }
         }))
     }
 
@@ -288,7 +330,7 @@ impl SyntaxTreeState {
     /// Truncates the syntax tree cache to maintain the MAX_SYNTAX_TREES policy.
     /// Keeps the oldest MAX_SYNTAX_TREES - 1 versions and the provided content_version.
     fn truncate_tree_state(
-        syntax_tree_lock: &mut HashMap<BufferVersion, Tree>,
+        syntax_tree_lock: &mut HashMap<BufferVersion, SyntaxTrees>,
         buffer_version: BufferVersion,
     ) {
         if syntax_tree_lock.len() <= MAX_SYNTAX_TREES {
@@ -331,22 +373,27 @@ impl DecorationLayer for SyntaxTreeState {
         };
 
         let mut syntax_tree_lock = self.syntax_tree.lock();
-        let mut tree = syntax_tree_lock.get(&self.buffer_version).cloned();
-        if let Some(tree) = &mut tree {
+        let mut trees = syntax_tree_lock.get(&self.buffer_version).cloned();
+        if let Some(trees) = &mut trees {
             for delta in deltas {
                 let edit = Self::delta_to_input_edit(delta);
-                tree.edit(&edit);
+                trees.host.edit(&edit);
+                // Editing also shifts each injection's included ranges.
+                for injection in &mut trees.injections {
+                    injection.tree.edit(&edit);
+                }
             }
 
             // We write to the tree immediately after editing first to prevent flickering in the render
             // state before reparsing gets completed.
             if let Some(existing) = syntax_tree_lock.get_mut(&version) {
-                existing.clone_from(tree);
+                existing.clone_from(trees);
             } else {
-                syntax_tree_lock.insert(version, tree.clone());
+                syntax_tree_lock.insert(version, trees.clone());
                 Self::truncate_tree_state(&mut syntax_tree_lock, version);
             }
         }
+        let tree = trees.map(|trees| trees.host);
 
         let handle = ctx
             .spawn(
