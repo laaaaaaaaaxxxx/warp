@@ -30,7 +30,7 @@ use vim::{
 };
 use warp_core::platform::SessionPlatform;
 use warp_core::semantic_selection::SemanticSelection;
-use warp_core::ui::theme::Fill;
+use warp_core::ui::theme::{ColorScheme, Fill};
 use warp_editor::content::anchor::Anchor;
 use warp_editor::content::buffer::{
     AutoScrollBehavior, Buffer, BufferEditAction, BufferEvent, BufferSelectAction, EditOrigin,
@@ -75,6 +75,7 @@ use crate::code::editor::line_iterator::LineIterator;
 use crate::code_review::comments::{CommentId, CommentOrigin, LineDiffContent};
 use crate::editor::InteractionState;
 use crate::notebooks::editor::model::word_unit;
+use crate::settings::{AppEditorSettings, AppEditorSettingsChangedEvent};
 use crate::themes::theme::AnsiColorIdentifier;
 use crate::util::link_detection::get_word_range_at_offset;
 
@@ -411,6 +412,13 @@ impl CodeEditorModel {
     ) -> Self {
         ctx.subscribe_to_model(&content, |me, _, event, ctx| {
             me.handle_content_model_event(event, ctx);
+        });
+
+        ctx.subscribe_to_model(&AppEditorSettings::handle(ctx), |me, _, event, ctx| {
+            if let AppEditorSettingsChangedEvent::MarkdownKeyValueColorsSetting { .. } = event {
+                me.set_color_map(ctx);
+                ctx.notify();
+            }
         });
 
         let selection_model = ctx.add_model(|_ctx| BufferSelectionModel::new(content.clone()));
@@ -1403,6 +1411,11 @@ impl CodeEditorModel {
     fn syntax_highlighting_color_map(ctx: &mut ModelContext<Self>) -> ColorMap {
         let appearance = Appearance::as_ref(ctx);
         let terminal_color = appearance.theme().terminal_colors().normal;
+        let colors = &AppEditorSettings::as_ref(ctx).markdown_key_value_colors;
+        let markdown_colors = match appearance.theme().inferred_color_scheme() {
+            ColorScheme::DarkOnLight => colors.light,
+            ColorScheme::LightOnDark => colors.dark,
+        };
 
         // TODO: This mapping is not finalized. We still need to double check with design.
         ColorMap {
@@ -1430,6 +1443,8 @@ impl CodeEditorModel {
             tag_color: AnsiColorIdentifier::Red
                 .to_ansi_color(&terminal_color)
                 .into(),
+            markdown_key_color: markdown_colors.key,
+            markdown_value_color: markdown_colors.value,
         }
     }
 
