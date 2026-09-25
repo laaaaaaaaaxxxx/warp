@@ -561,6 +561,7 @@ fn terminal_tab(cwd: &str, group_id: Option<TabGroupId>) -> TabSnapshot {
                 active_profile_id: None,
                 conversation_ids_to_restore: vec![],
                 active_conversation_id: None,
+                ssh_session: None,
             }),
         }),
         left_panel: None,
