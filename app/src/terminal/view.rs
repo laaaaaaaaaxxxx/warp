@@ -14167,7 +14167,17 @@ impl TerminalView {
 
         let model_events_handle = self.model_events_handle.clone();
         let view_id = self.view_id;
-        let agent = notification.agent;
+        // The shared Claude plugin reports "claude" for both launchers, including
+        // before the long-running-command timer has classified the block.
+        let agent = if notification.agent == CLIAgent::Claude
+            && self
+                .detect_cli_agent_from_active_command(&self.model.lock(), ctx)
+                .is_some_and(|(agent, _)| agent == CLIAgent::ClaudeBridge)
+        {
+            CLIAgent::ClaudeBridge
+        } else {
+            notification.agent
+        };
         let listener = ctx.add_model(|ctx| {
             CLIAgentSessionListener::new(view_id, agent, &model_events_handle, ctx)
         });
@@ -17430,7 +17440,7 @@ impl TerminalView {
                 // On Windows, Claude Code uses Alt+V for native image paste.
                 let is_claude = CLIAgentSessionsModel::as_ref(ctx)
                     .session(self.view_id)
-                    .is_some_and(|s| s.agent == CLIAgent::Claude);
+                    .is_some_and(|s| matches!(s.agent, CLIAgent::Claude | CLIAgent::ClaudeBridge));
                 if is_claude {
                     self.write_user_bytes_to_pty(vec![escape_sequences::C0::ESC, b'v'], ctx);
                     return;

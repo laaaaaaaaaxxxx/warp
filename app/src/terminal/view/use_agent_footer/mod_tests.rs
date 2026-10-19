@@ -24,6 +24,8 @@ use crate::terminal::cli_agent_sessions::{
     CLIAgentSessionsModel,
 };
 use crate::terminal::model::ansi::{BootstrappedValue, Handler as _, InitShellValue};
+use crate::terminal::model::block::BlockMetadata;
+use crate::terminal::model::session::SessionInfo;
 use crate::terminal::shared_session::SharedSessionSource;
 use crate::terminal::{CLIAgent, Event};
 use crate::test_util::add_window_with_terminal;
@@ -528,4 +530,70 @@ fn insert_cli_agent_voice_text_hermes_multiline_uses_bracketed_paste_without_sub
         expected_paste.extend_from_slice(BRACKETED_PASTE_END);
         assert_eq!(writes[0], expected_paste);
     })
+}
+
+fn assert_claude_plugin_binds_launch_identity(detection_first: bool) {
+    for (command, expected) in [
+        ("claude", CLIAgent::Claude),
+        ("claude-bridge", CLIAgent::ClaudeBridge),
+        ("claude-bridge-OpenAI", CLIAgent::ClaudeBridge),
+    ] {
+        App::test((), |mut app| async move {
+            initialize_app_for_terminal_view(&mut app);
+            let terminal = add_window_with_terminal(&mut app, None);
+            terminal.update(&mut app, |view, ctx| {
+                view.sessions.update(ctx, |sessions, ctx| {
+                    sessions.initialize_bootstrapped_session(
+                        SessionInfo::new_for_test(), String::new(), vec![], None, ctx,
+                    );
+                });
+                view.active_block_metadata = Some(BlockMetadata::new(Some(0.into()), None));
+                {
+                    let mut model = view.model.lock();
+                    model.simulate_long_running_block(command, "");
+                    model.block_list_mut().active_block_mut()
+                        .set_was_long_running(detection_first.into());
+                }
+                let detection = view.detect_cli_agent_from_model(&view.model.lock(), ctx);
+                if detection_first {
+                    assert_eq!(detection, Some((expected, None)));
+                    CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                        sessions.set_session(view.id(), CLIAgentSession {
+                            agent: expected,
+                            status: CLIAgentSessionStatus::InProgress,
+                            session_context: CLIAgentSessionContext::default(),
+                            input_state: CLIAgentInputState::Closed,
+                            should_auto_toggle_input: false,
+                            listener: None,
+                            plugin_version: None,
+                            remote_host: None,
+                            draft_text: None,
+                            custom_command_prefix: None,
+                            received_rich_notification: false,
+                        }, ctx);
+                    });
+                } else {
+                    assert_eq!(detection, None);
+                }
+                let notification = crate::terminal::cli_agent_sessions::event::parse_event(
+                    Some("warp://cli-agent"),
+                    r#"{"v":1,"agent":"claude","event":"session_start","session_id":"bridge-test","plugin_version":"2.2.0"}"#,
+                ).unwrap();
+                assert!(view.register_cli_agent_listener_from_event(&notification, ctx));
+                let session = CLIAgentSessionsModel::as_ref(ctx).session(view.id()).unwrap();
+                assert_eq!(session.agent, expected);
+                assert!(session.listener.is_some());
+            });
+        });
+    }
+}
+
+#[test]
+fn claude_plugin_first_binds_bridge_before_long_running_detection() {
+    assert_claude_plugin_binds_launch_identity(false);
+}
+
+#[test]
+fn claude_plugin_upgrades_detected_bridge_without_replacing_identity() {
+    assert_claude_plugin_binds_launch_identity(true);
 }

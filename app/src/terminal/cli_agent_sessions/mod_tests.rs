@@ -1456,3 +1456,33 @@ fn second_ctrl_c_while_armed_reuses_the_existing_window() {
         });
     });
 }
+
+#[test]
+fn claude_plugin_events_preserve_bridge_identity() {
+    App::test((), |mut app| async move {
+        let model = app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+        let view_id = EntityId::new();
+        model.update(&mut app, |sessions, ctx| {
+            let mut session = cli_agent_session(CLIAgentSessionStatus::InProgress, false);
+            session.agent = CLIAgent::ClaudeBridge;
+            sessions.set_session(view_id, session, ctx);
+            for event_type in [
+                CLIAgentEventType::SessionStart,
+                CLIAgentEventType::PromptSubmit,
+                CLIAgentEventType::Stop,
+            ] {
+                sessions.update_from_event(view_id, &rich_event(event_type), ctx);
+                assert_eq!(
+                    sessions.session(view_id).unwrap().agent,
+                    CLIAgent::ClaudeBridge
+                );
+            }
+            assert!(
+                sessions
+                    .session(view_id)
+                    .unwrap()
+                    .received_rich_notification
+            );
+        });
+    });
+}

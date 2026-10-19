@@ -126,6 +126,7 @@ fn rich_input_submit_strategy(agent: CLIAgent) -> RichInputSubmitStrategy {
         CLIAgent::OhMyPi => RichInputSubmitStrategy::BracketedPaste,
         CLIAgent::Copilot => RichInputSubmitStrategy::BracketedPasteDelayedEnter,
         CLIAgent::Claude
+        | CLIAgent::ClaudeBridge
         | CLIAgent::OpenCode
         | CLIAgent::Gemini
         | CLIAgent::Auggie
@@ -371,13 +372,25 @@ impl TerminalView {
         model: &TerminalModel,
         ctx: &AppContext,
     ) -> Option<(CLIAgent, Option<String>)> {
-        let active_block = model.block_list().active_block();
-
-        if !active_block.is_active_and_long_running() {
+        if !model
+            .block_list()
+            .active_block()
+            .is_active_and_long_running()
+        {
             return None;
         }
+        self.detect_cli_agent_from_active_command(model, ctx)
+    }
 
-        let command = active_block.command_with_secrets_obfuscated(false);
+    pub(super) fn detect_cli_agent_from_active_command(
+        &self,
+        model: &TerminalModel,
+        ctx: &AppContext,
+    ) -> Option<(CLIAgent, Option<String>)> {
+        let command = model
+            .block_list()
+            .active_block()
+            .command_with_secrets_obfuscated(false);
 
         let detected = self.active_block_session_id().and_then(|session_id| {
             self.sessions.read(ctx, |sessions, _| {

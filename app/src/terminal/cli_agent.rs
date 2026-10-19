@@ -161,6 +161,7 @@ const MUSE_COLOR: ColorU = ColorU {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
     Claude,
+    ClaudeBridge,
     Gemini,
     Codex,
     Amp,
@@ -189,6 +190,7 @@ impl CLIAgent {
     pub fn telemetry_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "Claude",
+            CLIAgent::ClaudeBridge => "ClaudeBridge",
             CLIAgent::Gemini => "Gemini",
             CLIAgent::Codex => "Codex",
             CLIAgent::Amp => "Amp",
@@ -215,6 +217,7 @@ impl CLIAgent {
     pub(crate) fn command_prefixes(&self) -> &'static [&'static str] {
         match self {
             CLIAgent::Claude => &["claude"],
+            CLIAgent::ClaudeBridge => &["claude-bridge", "claude-bridge-OpenAI"],
             CLIAgent::Gemini => &["gemini"],
             CLIAgent::Codex => &["codex"],
             CLIAgent::Amp => &["amp"],
@@ -281,6 +284,7 @@ impl CLIAgent {
     pub fn display_name(&self) -> &'static str {
         match self {
             CLIAgent::Claude => "Claude Code",
+            CLIAgent::ClaudeBridge => "Claude Bridge",
             CLIAgent::Gemini => "Gemini",
             CLIAgent::Codex => "Codex",
             CLIAgent::Amp => "Amp",
@@ -307,6 +311,7 @@ impl CLIAgent {
     pub fn icon(&self) -> Option<Icon> {
         match self {
             CLIAgent::Claude => Some(Icon::ClaudeLogo),
+            CLIAgent::ClaudeBridge => Some(Icon::ClaudeBridgeLogo),
             CLIAgent::Gemini => Some(Icon::GeminiLogo),
             CLIAgent::Codex => Some(Icon::OpenAILogo),
             CLIAgent::Amp => Some(Icon::AmpLogo),
@@ -337,7 +342,7 @@ impl CLIAgent {
     /// in the slash menu. Returns an empty slice for agents with no known skills support.
     pub fn supported_skill_providers(&self) -> &'static [SkillProvider] {
         match self {
-            CLIAgent::Claude => &[SkillProvider::Claude],
+            CLIAgent::Claude | CLIAgent::ClaudeBridge => &[SkillProvider::Claude],
             CLIAgent::Codex => &[
                 SkillProvider::Agents,
                 SkillProvider::Claude,
@@ -391,6 +396,7 @@ impl CLIAgent {
         matches!(
             self,
             CLIAgent::Claude
+                | CLIAgent::ClaudeBridge
                 | CLIAgent::Codex
                 | CLIAgent::OpenCode
                 | CLIAgent::OhMyPi
@@ -409,6 +415,7 @@ impl CLIAgent {
     pub fn brand_color(&self) -> Option<ColorU> {
         match self {
             CLIAgent::Claude => Some(CLAUDE_ORANGE),
+            CLIAgent::ClaudeBridge => Some(ColorU::new(207, 234, 222, 255)),
             CLIAgent::Gemini => Some(GEMINI_BLUE),
             CLIAgent::Codex => Some(OPENAI_COLOR),
             CLIAgent::Amp => Some(AMP_COLOR),

@@ -40,6 +40,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
     matches!(
         agent,
         CLIAgent::Claude
+            | CLIAgent::ClaudeBridge
             | CLIAgent::OpenCode
             | CLIAgent::Codex
             | CLIAgent::Gemini
@@ -65,6 +66,7 @@ fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
         // install flows for these agents here — we just listen.
         // WarpTui emits OSC 777 events directly (no external plugin needed).
         CLIAgent::Claude
+        | CLIAgent::ClaudeBridge
         | CLIAgent::OpenCode
         | CLIAgent::Gemini
         | CLIAgent::Auggie

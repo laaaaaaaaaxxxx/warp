@@ -276,6 +276,7 @@ pub enum Icon {
     FilterLines,
     ChatDashed,
     ClaudeLogo,
+    ClaudeBridgeLogo,
     GeminiLogo,
     GrokLogo,
     KiroLogo,
@@ -628,6 +629,7 @@ impl From<Icon> for &'static str {
             Icon::FilterLines => "bundled/svg/filter-lines.svg",
             Icon::ChatDashed => "bundled/svg/chat-dashed.svg",
             Icon::ClaudeLogo => "bundled/svg/claude.svg",
+            Icon::ClaudeBridgeLogo => "bundled/svg/claude_bridge.svg",
             Icon::GeminiLogo => "bundled/svg/gemini_cli.svg",
             Icon::GrokLogo => "bundled/svg/grok.svg",
             Icon::KiroLogo => "bundled/svg/kiro.svg",
@@ -698,7 +700,12 @@ impl From<Icon> for &'static str {
 
 impl Icon {
     pub fn to_warpui_icon(self, color: Fill) -> WarpUiIcon {
-        WarpUiIcon::new(self.into(), color.into_solid())
+        let icon = WarpUiIcon::new(self.into(), color.into_solid());
+        if self == Icon::ClaudeBridgeLogo {
+            icon.with_original_colors()
+        } else {
+            icon
+        }
     }
 
     pub fn icon_for_key(key: &str) -> Option<WarpUiIcon> {

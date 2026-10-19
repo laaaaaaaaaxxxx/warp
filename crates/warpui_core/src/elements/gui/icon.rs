@@ -11,8 +11,7 @@ use crate::{
     SizeConstraint,
 };
 
-/// An element that renders a monochrome icon. This differs from `Svg` in that it sets the color dynamically
-/// instead of statically from the SVG itself.
+/// An icon tinted dynamically by default, with opt-in original asset colors.
 #[derive(Clone, Copy)]
 pub struct Icon {
     path: &'static str,
@@ -20,6 +19,7 @@ pub struct Icon {
     size: Option<Vector2F>,
     origin: Option<Point>,
     color: ColorU,
+    original_colors: bool,
     #[cfg(debug_assertions)]
     /// Captures the location of the constructor call site. This is used for debugging purposes.
     constructor_location: Option<&'static std::panic::Location<'static>>,
@@ -33,6 +33,7 @@ impl Icon {
             opacity: 1.,
             size: None,
             color: color.into(),
+            original_colors: false,
             origin: None,
             #[cfg(debug_assertions)]
             constructor_location: Some(std::panic::Location::caller()),
@@ -40,6 +41,10 @@ impl Icon {
     }
     pub fn with_opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity;
+        self
+    }
+    pub fn with_original_colors(mut self) -> Self {
+        self.original_colors = true;
         self
     }
     pub fn with_color(mut self, color: impl Into<ColorU>) -> Self {
@@ -93,12 +98,14 @@ impl Element for Icon {
                     ctx.scene
                         .set_location_for_panic_logging(self.constructor_location);
 
-                    ctx.scene.draw_icon(
-                        RectF::new(origin, logical_image_size),
-                        image.clone(),
-                        self.opacity,
-                        self.color,
-                    );
+                    let rect = RectF::new(origin, logical_image_size);
+                    if self.original_colors {
+                        ctx.scene
+                            .draw_image(rect, image.clone(), self.opacity, Default::default());
+                    } else {
+                        ctx.scene
+                            .draw_icon(rect, image.clone(), self.opacity, self.color);
+                    }
                 }
                 Image::Animated(_image) => {
                     log::info!("Animated icons are currently not supported");

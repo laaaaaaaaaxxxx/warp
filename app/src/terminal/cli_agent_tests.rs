@@ -258,6 +258,12 @@ fn test_detect_known_agents() {
         app.update(|ctx| {
             for (command, expected) in [
                 ("claude", CLIAgent::Claude),
+                ("claude-bridge", CLIAgent::ClaudeBridge),
+                ("claude-bridge-OpenAI", CLIAgent::ClaudeBridge),
+                (
+                    "/usr/local/bin/claude-bridge --model opus",
+                    CLIAgent::ClaudeBridge,
+                ),
                 ("gemini", CLIAgent::Gemini),
                 ("codex", CLIAgent::Codex),
                 ("amp", CLIAgent::Amp),
@@ -690,4 +696,27 @@ fn test_warp_tui_variant_properties() {
         CLIAgent::from_serialized_name(&CLIAgent::WarpTui.to_serialized_name()),
         CLIAgent::WarpTui
     );
+}
+
+#[test]
+fn claude_bridge_identity_is_distinct_from_claude() {
+    assert_eq!(CLIAgent::ClaudeBridge.to_serialized_name(), "ClaudeBridge");
+    assert_eq!(CLIAgent::ClaudeBridge.display_name(), "Claude Bridge");
+    assert_eq!(CLIAgent::ClaudeBridge.icon(), Some(Icon::ClaudeBridgeLogo));
+    assert_ne!(CLIAgent::ClaudeBridge, CLIAgent::Claude);
+    assert_eq!(
+        CLIAgent::ClaudeBridge.brand_color(),
+        Some(ColorU::new(207, 234, 222, 255))
+    );
+    assert_ne!(
+        CLIAgent::ClaudeBridge.brand_color(),
+        CLIAgent::Claude.brand_color()
+    );
+    assert_eq!(
+        CLIAgent::ClaudeBridge.supported_skill_providers(),
+        CLIAgent::Claude.supported_skill_providers()
+    );
+    assert!(CLIAgent::ClaudeBridge.supports_bash_mode());
+    assert!(!CLIAgent::Claude.matches_command("claude-bridge", Some(EscapeChar::Backslash)));
+    assert!(!CLIAgent::ClaudeBridge.matches_command("claude", Some(EscapeChar::Backslash)));
 }
