@@ -1295,6 +1295,17 @@ impl SizeUpdateBuilder {
             }
         };
 
+        const CLAUDE_INLINE_PTY_ROWS: usize = 500;
+        let new_size = if !model.is_alt_screen_active()
+            && CLIAgentSessionsModel::as_ref(ctx)
+                .session(view.view_id)
+                .is_some_and(|s| matches!(s.agent, CLIAgent::Claude | CLIAgent::ClaudeBridge))
+        {
+            new_size.with_rows_and_columns(CLAUDE_INLINE_PTY_ROWS, new_size.columns)
+        } else {
+            new_size
+        };
+
         // Adjust the gap size to maintain the model invariant that the height of the
         // gap + all block_heights after the gap equals the height of the current
         // space in which to render the blocklist.  Note that we also need to run this
@@ -14358,6 +14369,7 @@ impl TerminalView {
             )
         {
             self.update_git_status_subscription(ctx);
+            self.refresh_size(ctx);
         }
 
         let CLIAgentSessionsModelEvent::StatusChanged {
