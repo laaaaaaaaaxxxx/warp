@@ -597,3 +597,57 @@ fn claude_plugin_first_binds_bridge_before_long_running_detection() {
 fn claude_plugin_upgrades_detected_bridge_without_replacing_identity() {
     assert_claude_plugin_binds_launch_identity(true);
 }
+
+#[test]
+fn runtime_session_outlives_its_command_block() {
+    use futures_lite::StreamExt;
+
+    for (agent, survives) in [(CLIAgent::Runtime, true), (CLIAgent::Claude, false)] {
+        App::test((), |mut app| async move {
+            initialize_app_for_terminal_view(&mut app);
+            let terminal = add_window_with_terminal(&mut app, None);
+
+            let (tx, rx) = async_channel::bounded(1);
+            app.update(|ctx| {
+                ctx.subscribe_to_view(&terminal, move |_, event, _| {
+                    if let Event::BlockCompleted { .. } = event {
+                        let _ = tx.try_send(());
+                    }
+                });
+            });
+
+            terminal.update(&mut app, |view, ctx| {
+                view.model
+                    .lock()
+                    .simulate_long_running_block("make census_dev", "");
+                CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions, ctx| {
+                    sessions.set_session(
+                        view.id(),
+                        CLIAgentSession {
+                            agent,
+                            status: CLIAgentSessionStatus::InProgress,
+                            session_context: CLIAgentSessionContext::default(),
+                            input_state: CLIAgentInputState::Closed,
+                            should_auto_toggle_input: false,
+                            listener: None,
+                            plugin_version: None,
+                            remote_host: None,
+                            draft_text: None,
+                            custom_command_prefix: None,
+                            received_rich_notification: true,
+                        },
+                        ctx,
+                    );
+                });
+                view.model.lock().finish_block();
+            });
+
+            assert!(std::pin::pin!(rx).next().await.is_some());
+
+            terminal.read(&app, |view, ctx| {
+                let session = CLIAgentSessionsModel::as_ref(ctx).session(view.id());
+                assert_eq!(session.is_some(), survives, "{agent:?}");
+            });
+        });
+    }
+}

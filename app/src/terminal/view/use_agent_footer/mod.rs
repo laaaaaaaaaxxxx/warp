@@ -141,6 +141,7 @@ fn rich_input_submit_strategy(agent: CLIAgent) -> RichInputSubmitStrategy {
         | CLIAgent::Goose
         | CLIAgent::Vibe
         | CLIAgent::WarpTui
+        | CLIAgent::Runtime
         | CLIAgent::Unknown => RichInputSubmitStrategy::Inline,
     }
 }

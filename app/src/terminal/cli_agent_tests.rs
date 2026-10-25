@@ -720,3 +720,33 @@ fn claude_bridge_identity_is_distinct_from_claude() {
     assert!(!CLIAgent::Claude.matches_command("claude-bridge", Some(EscapeChar::Backslash)));
     assert!(!CLIAgent::ClaudeBridge.matches_command("claude", Some(EscapeChar::Backslash)));
 }
+
+#[test]
+fn runtime_identity_is_reported_by_the_tool_not_detected_from_commands() {
+    assert_eq!(CLIAgent::Runtime.to_serialized_name(), "Runtime");
+    assert_eq!(CLIAgent::Runtime.display_name(), "Runtime");
+    assert_eq!(CLIAgent::Runtime.icon(), Some(Icon::RuntimeLogo));
+    assert_eq!(
+        CLIAgent::Runtime.brand_color(),
+        Some(ColorU::new(36, 131, 123, 255))
+    );
+    assert_eq!(CLIAgent::Runtime.brand_icon_color(), ColorU::white());
+    assert!(!CLIAgent::Runtime.supports_cli_agent_footer());
+    assert!(!CLIAgent::Runtime.supports_bash_mode());
+    assert!(CLIAgent::Runtime.supported_skill_providers().is_empty());
+
+    let event = crate::terminal::cli_agent_sessions::event::parse_event(
+        Some("warp://cli-agent"),
+        r#"{"v":1,"agent":"runtime","event":"prompt_submit"}"#,
+    )
+    .unwrap();
+    assert_eq!(event.agent, CLIAgent::Runtime);
+
+    App::test((), |mut app| async move {
+        app.update(|ctx| {
+            for command in ["make census_dev", "just dev"] {
+                assert_eq!(CLIAgent::detect(command, None, None, ctx), None);
+            }
+        });
+    });
+}

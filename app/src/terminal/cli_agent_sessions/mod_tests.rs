@@ -1486,3 +1486,41 @@ fn claude_plugin_events_preserve_bridge_identity() {
         });
     });
 }
+
+#[test]
+fn runtime_session_follows_the_tool_reported_run_state() {
+    App::test((), |mut app| async move {
+        let model = app.add_singleton_model(|_| CLIAgentSessionsModel::new());
+        let view_id = EntityId::new();
+        model.update(&mut app, |sessions, ctx| {
+            let mut session = cli_agent_session(CLIAgentSessionStatus::InProgress, false);
+            session.agent = CLIAgent::Runtime;
+            sessions.set_session(view_id, session, ctx);
+            for (event_type, expected) in [
+                (
+                    CLIAgentEventType::PromptSubmit,
+                    CLIAgentSessionStatus::InProgress,
+                ),
+                (CLIAgentEventType::Stop, CLIAgentSessionStatus::Success),
+                (
+                    CLIAgentEventType::PromptSubmit,
+                    CLIAgentSessionStatus::InProgress,
+                ),
+                (
+                    CLIAgentEventType::StopFailure,
+                    CLIAgentSessionStatus::Failed {
+                        error_type: None,
+                        message: None,
+                    },
+                ),
+            ] {
+                let mut event = rich_event(event_type);
+                event.agent = CLIAgent::Runtime;
+                sessions.update_from_event(view_id, &event, ctx);
+                let session = sessions.session(view_id).unwrap();
+                assert_eq!(session.status, expected);
+                assert_eq!(session.agent, CLIAgent::Runtime);
+            }
+        });
+    });
+}

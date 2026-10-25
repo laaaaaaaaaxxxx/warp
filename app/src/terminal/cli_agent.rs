@@ -157,6 +157,14 @@ const MUSE_COLOR: ColorU = ColorU {
     a: 255,
 };
 
+/// Runtime color (Flexoki cyan-600 #24837B)
+const RUNTIME_COLOR: ColorU = ColorU {
+    r: 36,
+    g: 131,
+    b: 123,
+    a: 255,
+};
+
 /// Represents a CLI agent (e.g., Claude Code, Gemini CLI, Codex, Amp, Droid, OpenCode, Copilot, Pi, Auggie, Cursor, Goose, Hermes, Mistral Vibe, Grok Build, Kiro CLI, Muse Code)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Sequence, Serialize, Deserialize)]
 pub enum CLIAgent {
@@ -181,6 +189,8 @@ pub enum CLIAgent {
     Muse,
     /// Warp's own headless TUI.
     WarpTui,
+    /// A long-running tool (make, just, ...) that reports its own run state over OSC 777.
+    Runtime,
     /// Represents an unknown/custom CLI agent matched by user-configured regex patterns.
     Unknown,
 }
@@ -209,6 +219,7 @@ impl CLIAgent {
             CLIAgent::Kiro => "Kiro",
             CLIAgent::Muse => "Muse",
             CLIAgent::WarpTui => "WarpTui",
+            CLIAgent::Runtime => "Runtime",
             CLIAgent::Unknown => "Unknown",
         }
     }
@@ -243,6 +254,7 @@ impl CLIAgent {
             CLIAgent::Grok => &["grok"],
             CLIAgent::Kiro => &["kiro-cli", "kiro"],
             CLIAgent::Muse => &["muse"],
+            CLIAgent::Runtime => &["runtime"],
             CLIAgent::Unknown => &[],
         }
     }
@@ -303,6 +315,7 @@ impl CLIAgent {
             CLIAgent::Kiro => "Kiro CLI",
             CLIAgent::Muse => "Muse Code",
             CLIAgent::WarpTui => "Warp TUI",
+            CLIAgent::Runtime => "Runtime",
             CLIAgent::Unknown => "CLI Agent",
         }
     }
@@ -333,6 +346,7 @@ impl CLIAgent {
             CLIAgent::Kiro => Some(Icon::KiroLogo),
             CLIAgent::Muse => Some(Icon::MuseLogo),
             CLIAgent::WarpTui => Some(Icon::Warp),
+            CLIAgent::Runtime => Some(Icon::RuntimeLogo),
             CLIAgent::Unknown => None,
         }
     }
@@ -373,6 +387,7 @@ impl CLIAgent {
                 SkillProvider::Codex,
             ],
             CLIAgent::WarpTui => &[],
+            CLIAgent::Runtime => &[],
             CLIAgent::Unknown => &[],
         }
     }
@@ -408,7 +423,7 @@ impl CLIAgent {
 
     /// Whether Warp should show its CLI-agent footer for this agent.
     pub(crate) fn supports_cli_agent_footer(&self) -> bool {
-        !matches!(self, CLIAgent::WarpTui)
+        !matches!(self, CLIAgent::WarpTui | CLIAgent::Runtime)
     }
 
     /// Returns the brand color for this CLI agent, or `None` for unknown/custom agents.
@@ -434,6 +449,7 @@ impl CLIAgent {
             CLIAgent::Kiro => Some(KIRO_PURPLE),
             CLIAgent::Muse => Some(MUSE_COLOR),
             CLIAgent::WarpTui => Some(ColorU::black()),
+            CLIAgent::Runtime => Some(RUNTIME_COLOR),
             CLIAgent::Unknown => None,
         }
     }

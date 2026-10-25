@@ -12751,7 +12751,14 @@ impl TerminalView {
                     // session is removed immediately afterwards.
                     self.close_cli_agent_rich_input(CLIAgentRichInputCloseReason::Other, ctx);
                     CLIAgentSessionsModel::handle(ctx).update(ctx, |sessions_model, ctx| {
-                        sessions_model.remove_session(self.view_id, ctx);
+                        // A Runtime session outlives its command: the tool that launched it
+                        // reports the final state, and the session goes away with the pane.
+                        let is_runtime = sessions_model
+                            .session(self.view_id)
+                            .is_some_and(|s| s.agent == CLIAgent::Runtime);
+                        if !is_runtime {
+                            sessions_model.remove_session(self.view_id, ctx);
+                        }
                     });
                 }
 
@@ -24504,6 +24511,7 @@ impl TerminalView {
     }
 
     /// Returns the CLI agent currently active in this terminal, if any.
+    /// Runtime is excluded: it reports run state and does not take text input.
     pub fn active_cli_agent(&self, ctx: &AppContext) -> Option<super::CLIAgent> {
         if !FeatureFlag::HoaCodeReview.is_enabled() {
             return None;
@@ -24511,6 +24519,7 @@ impl TerminalView {
         CLIAgentSessionsModel::as_ref(ctx)
             .session(self.view_id)
             .map(|s| s.agent)
+            .filter(|agent| *agent != CLIAgent::Runtime)
     }
 
     /// Returns `true` if CLI agent rich input is currently open.
