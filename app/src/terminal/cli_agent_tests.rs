@@ -266,6 +266,8 @@ fn test_detect_known_agents() {
                 ),
                 ("gemini", CLIAgent::Gemini),
                 ("codex", CLIAgent::Codex),
+                ("codex-bridge", CLIAgent::CodexBridge),
+                ("/Users/me/.local/bin/codex-bridge -m gpt", CLIAgent::CodexBridge),
                 ("amp", CLIAgent::Amp),
                 ("droid", CLIAgent::Droid),
                 ("opencode", CLIAgent::OpenCode),
@@ -749,4 +751,25 @@ fn runtime_identity_is_reported_by_the_tool_not_detected_from_commands() {
             }
         });
     });
+}
+
+#[test]
+fn codex_bridge_identity_is_distinct_from_codex() {
+    assert_eq!(CLIAgent::CodexBridge.to_serialized_name(), "CodexBridge");
+    assert_eq!(CLIAgent::CodexBridge.display_name(), "Codex Bridge");
+    assert_eq!(CLIAgent::CodexBridge.icon(), Some(Icon::CodexBridgeLogo));
+    assert_ne!(CLIAgent::CodexBridge, CLIAgent::Codex);
+    assert_eq!(
+        CLIAgent::CodexBridge.brand_color(),
+        Some(ColorU::new(207, 234, 222, 255))
+    );
+    assert_eq!(
+        CLIAgent::CodexBridge.supported_skill_providers(),
+        CLIAgent::Codex.supported_skill_providers()
+    );
+    assert_eq!(CLIAgent::CodexBridge.skill_command_prefix(), "$");
+    assert_eq!(CLIAgent::CodexBridge.plugin_agent(), CLIAgent::Codex);
+    assert_eq!(CLIAgent::ClaudeBridge.plugin_agent(), CLIAgent::Claude);
+    assert!(!CLIAgent::Codex.matches_command("codex-bridge", Some(EscapeChar::Backslash)));
+    assert!(!CLIAgent::CodexBridge.matches_command("codex", Some(EscapeChar::Backslash)));
 }

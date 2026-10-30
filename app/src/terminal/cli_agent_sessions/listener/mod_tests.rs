@@ -422,3 +422,26 @@ fn antigravity_notifications_are_supported() {
     assert_eq!(parsed_prompt_req.event, CLIAgentEventType::NeedsInput);
     assert!(handler.handle_event(parsed_prompt_req).is_some());
 }
+
+#[test]
+fn codex_bridge_try_parse_claims_codex_plugin_events() {
+    let _guard = FeatureFlag::CodexPlugin.override_enabled(true);
+    let mut handler = Osc9FallbackSessionHandler {
+        agent: CLIAgent::CodexBridge,
+    };
+    let body = r#"{"v":1,"agent":"codex","event":"stop"}"#;
+
+    let event = handler
+        .try_parse(Some(CLI_AGENT_NOTIFICATION_SENTINEL), body, false)
+        .unwrap();
+    assert_eq!(event.agent, CLIAgent::CodexBridge);
+    assert!(
+        handler
+            .try_parse(
+                Some(CLI_AGENT_NOTIFICATION_SENTINEL),
+                r#"{"v":1,"agent":"claude","event":"stop"}"#,
+                false
+            )
+            .is_none()
+    );
+}

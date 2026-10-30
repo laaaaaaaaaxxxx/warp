@@ -43,6 +43,7 @@ pub fn is_agent_supported(agent: &CLIAgent) -> bool {
             | CLIAgent::ClaudeBridge
             | CLIAgent::OpenCode
             | CLIAgent::Codex
+            | CLIAgent::CodexBridge
             | CLIAgent::Gemini
             | CLIAgent::Auggie
             | CLIAgent::Droid
@@ -79,7 +80,7 @@ fn create_handler(agent: &CLIAgent) -> Option<Box<dyn CLIAgentSessionHandler>> {
         | CLIAgent::WarpTui
         | CLIAgent::Runtime
         | CLIAgent::Antigravity => Some(Box::new(DefaultSessionListener)),
-        CLIAgent::Codex | CLIAgent::Grok => {
+        CLIAgent::Codex | CLIAgent::CodexBridge | CLIAgent::Grok => {
             Some(Box::new(Osc9FallbackSessionHandler { agent: *agent }))
         }
         CLIAgent::Hermes
@@ -143,13 +144,16 @@ impl CLIAgentSessionHandler for Osc9FallbackSessionHandler {
         plugin_already_active: bool,
     ) -> Option<CLIAgentEvent> {
         if let Some(event) = parse_event(title, body) {
-            if event.agent != self.agent {
+            if event.agent != self.agent.plugin_agent() {
                 return None;
             }
-            if self.agent == CLIAgent::Codex && !FeatureFlag::CodexPlugin.is_enabled() {
+            if event.agent == CLIAgent::Codex && !FeatureFlag::CodexPlugin.is_enabled() {
                 return None;
             }
-            return Some(event);
+            return Some(CLIAgentEvent {
+                agent: self.agent,
+                ..event
+            });
         }
         // OSC 9 notifications have no title. Skip OSC 9 once the rich plugin is
         // active, otherwise we'd process both OSC 777 and OSC 9 notifications.

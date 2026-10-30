@@ -265,7 +265,7 @@ pub(crate) fn plugin_manager_for_with_shell(
         {
             Some(Box::new(OpenCodePluginManager))
         }
-        CLIAgent::Codex
+        CLIAgent::Codex | CLIAgent::CodexBridge
             if FeatureFlag::CodexNotifications.is_enabled()
                 && FeatureFlag::HOANotifications.is_enabled() =>
         {
@@ -287,6 +287,7 @@ pub(crate) fn plugin_manager_for_with_shell(
         }
         CLIAgent::OpenCode
         | CLIAgent::Codex
+        | CLIAgent::CodexBridge
         | CLIAgent::Gemini
         | CLIAgent::Grok
         | CLIAgent::Muse

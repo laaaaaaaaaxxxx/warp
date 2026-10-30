@@ -12984,7 +12984,7 @@ impl TerminalView {
                                     // Codex and Grok use OSC 9 (and optional rich OSC 777)
                                     // without requiring a SessionStart sentinel first, so
                                     // create the listener proactively on command detection.
-                                    if let Some((agent @ (CLIAgent::Codex | CLIAgent::Grok), _)) =
+                                    if let Some((agent @ (CLIAgent::Codex | CLIAgent::CodexBridge | CLIAgent::Grok), _)) =
                                         detection
                                     {
                                         me.register_cli_agent_listener_without_session_start_event(
@@ -13768,7 +13768,10 @@ impl TerminalView {
                 if title.is_none() {
                     let has_codex_listener = CLIAgentSessionsModel::as_ref(ctx)
                         .session(self.view_id)
-                        .is_some_and(|s| s.agent == CLIAgent::Codex && s.listener.is_some());
+                        .is_some_and(|s| {
+                            matches!(s.agent, CLIAgent::Codex | CLIAgent::CodexBridge)
+                                && s.listener.is_some()
+                        });
                     if has_codex_listener {
                         return;
                     }
@@ -14185,16 +14188,16 @@ impl TerminalView {
 
         let model_events_handle = self.model_events_handle.clone();
         let view_id = self.view_id;
-        // The shared Claude plugin reports "claude" for both launchers, including
+        // Shared plugins report "claude" / "codex" for bridge launchers too, including
         // before the long-running-command timer has classified the block.
-        let agent = if notification.agent == CLIAgent::Claude
-            && self
-                .detect_cli_agent_from_active_command(&self.model.lock(), ctx)
-                .is_some_and(|(agent, _)| agent == CLIAgent::ClaudeBridge)
-        {
-            CLIAgent::ClaudeBridge
-        } else {
-            notification.agent
+        let agent = match self.detect_cli_agent_from_active_command(&self.model.lock(), ctx) {
+            Some((detected, _))
+                if detected != notification.agent
+                    && detected.plugin_agent() == notification.agent =>
+            {
+                detected
+            }
+            _ => notification.agent,
         };
         let listener = ctx.add_model(|ctx| {
             CLIAgentSessionListener::new(view_id, agent, &model_events_handle, ctx)
@@ -14228,7 +14231,7 @@ impl TerminalView {
         ctx: &mut ViewContext<Self>,
     ) {
         #[cfg(not(target_family = "wasm"))]
-        let plugin_version = if matches!(agent, CLIAgent::Codex) {
+        let plugin_version = if matches!(agent, CLIAgent::Codex | CLIAgent::CodexBridge) {
             // We use the lack of a plugin version for codex to differentiate between
             // OSC 9 notification fallback and real plugin.
             None

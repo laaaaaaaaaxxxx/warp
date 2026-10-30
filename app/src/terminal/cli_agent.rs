@@ -172,6 +172,7 @@ pub enum CLIAgent {
     ClaudeBridge,
     Gemini,
     Codex,
+    CodexBridge,
     Amp,
     Droid,
     OpenCode,
@@ -203,6 +204,7 @@ impl CLIAgent {
             CLIAgent::ClaudeBridge => "ClaudeBridge",
             CLIAgent::Gemini => "Gemini",
             CLIAgent::Codex => "Codex",
+            CLIAgent::CodexBridge => "CodexBridge",
             CLIAgent::Amp => "Amp",
             CLIAgent::Droid => "Droid",
             CLIAgent::OpenCode => "OpenCode",
@@ -231,6 +233,7 @@ impl CLIAgent {
             CLIAgent::ClaudeBridge => &["claude-bridge", "claude-bridge-OpenAI"],
             CLIAgent::Gemini => &["gemini"],
             CLIAgent::Codex => &["codex"],
+            CLIAgent::CodexBridge => &["codex-bridge"],
             CLIAgent::Amp => &["amp"],
             CLIAgent::Droid => &["droid"],
             CLIAgent::OpenCode => &["opencode"],
@@ -299,6 +302,7 @@ impl CLIAgent {
             CLIAgent::ClaudeBridge => "Claude Bridge",
             CLIAgent::Gemini => "Gemini",
             CLIAgent::Codex => "Codex",
+            CLIAgent::CodexBridge => "Codex Bridge",
             CLIAgent::Amp => "Amp",
             CLIAgent::Droid => "Droid",
             CLIAgent::OpenCode => "OpenCode",
@@ -327,6 +331,7 @@ impl CLIAgent {
             CLIAgent::ClaudeBridge => Some(Icon::ClaudeBridgeLogo),
             CLIAgent::Gemini => Some(Icon::GeminiLogo),
             CLIAgent::Codex => Some(Icon::OpenAILogo),
+            CLIAgent::CodexBridge => Some(Icon::CodexBridgeLogo),
             CLIAgent::Amp => Some(Icon::AmpLogo),
             CLIAgent::Droid => Some(Icon::DroidLogo),
             CLIAgent::OpenCode => Some(Icon::OpenCodeLogo),
@@ -357,7 +362,7 @@ impl CLIAgent {
     pub fn supported_skill_providers(&self) -> &'static [SkillProvider] {
         match self {
             CLIAgent::Claude | CLIAgent::ClaudeBridge => &[SkillProvider::Claude],
-            CLIAgent::Codex => &[
+            CLIAgent::Codex | CLIAgent::CodexBridge => &[
                 SkillProvider::Agents,
                 SkillProvider::Claude,
                 SkillProvider::Codex,
@@ -396,7 +401,7 @@ impl CLIAgent {
     /// Most agents use `/` (e.g. `/skill-name`), but Codex uses `$` (e.g. `$skill-name`).
     pub fn skill_command_prefix(&self) -> &'static str {
         match self {
-            CLIAgent::Codex => "$",
+            CLIAgent::Codex | CLIAgent::CodexBridge => "$",
             _ => "/",
         }
     }
@@ -413,6 +418,7 @@ impl CLIAgent {
             CLIAgent::Claude
                 | CLIAgent::ClaudeBridge
                 | CLIAgent::Codex
+                | CLIAgent::CodexBridge
                 | CLIAgent::OpenCode
                 | CLIAgent::OhMyPi
                 | CLIAgent::Grok
@@ -433,6 +439,7 @@ impl CLIAgent {
             CLIAgent::ClaudeBridge => Some(ColorU::new(207, 234, 222, 255)),
             CLIAgent::Gemini => Some(GEMINI_BLUE),
             CLIAgent::Codex => Some(OPENAI_COLOR),
+            CLIAgent::CodexBridge => Some(ColorU::new(207, 234, 222, 255)),
             CLIAgent::Amp => Some(AMP_COLOR),
             CLIAgent::Droid => Some(DROID_COLOR),
             CLIAgent::OpenCode => Some(OPENCODE_COLOR),
@@ -456,6 +463,15 @@ impl CLIAgent {
 
     /// Returns the icon color to use when rendered on the brand-colored circle background.
     /// Agents with light brand colors use a dark icon for contrast.
+    /// The agent name a shared plugin reports for this launcher's sessions.
+    pub fn plugin_agent(&self) -> CLIAgent {
+        match self {
+            CLIAgent::ClaudeBridge => CLIAgent::Claude,
+            CLIAgent::CodexBridge => CLIAgent::Codex,
+            agent => *agent,
+        }
+    }
+
     pub fn brand_icon_color(&self) -> ColorU {
         match self {
             CLIAgent::Pi

@@ -283,6 +283,7 @@ pub enum Icon {
     MuseLogo,
     RuntimeLogo,
     OpenAILogo,
+    CodexBridgeLogo,
     XLogo,
     AmpLogo,
     DroidLogo,
@@ -637,6 +638,7 @@ impl From<Icon> for &'static str {
             Icon::MuseLogo => "bundled/svg/muse.svg",
             Icon::RuntimeLogo => "bundled/svg/runtime.svg",
             Icon::OpenAILogo => "bundled/svg/openai.svg",
+            Icon::CodexBridgeLogo => "bundled/svg/codex_bridge.svg",
             Icon::XLogo => "bundled/svg/x-logo.svg",
             Icon::AmpLogo => "bundled/svg/amp.svg",
             Icon::DroidLogo => "bundled/svg/droid.svg",
@@ -703,7 +705,7 @@ impl From<Icon> for &'static str {
 impl Icon {
     pub fn to_warpui_icon(self, color: Fill) -> WarpUiIcon {
         let icon = WarpUiIcon::new(self.into(), color.into_solid());
-        if self == Icon::ClaudeBridgeLogo {
+        if matches!(self, Icon::ClaudeBridgeLogo | Icon::CodexBridgeLogo) {
             icon.with_original_colors()
         } else {
             icon
