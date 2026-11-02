@@ -25,7 +25,7 @@ use crate::pane_group::{PaneGroup, PaneId};
 use crate::remote_server::manager::RemoteServerManager;
 use crate::settings::{AISettings, CodeSettings};
 use crate::tab::SelectedTabColor;
-use crate::terminal::cli_agent_sessions::CLIAgentSessionsModel;
+use crate::terminal::cli_agent_sessions::{CLIAgentSessionStatus, CLIAgentSessionsModel};
 use crate::workspace::Workspace;
 use crate::workspace::tab_settings::TabSettings;
 
@@ -559,6 +559,7 @@ pub(crate) fn pane_list(
             rich_input_open,
             ssh_destination,
             cli_agent,
+            cli_agent_status,
             terminal_selection,
             input_selection,
         ) = entry.pane_group.read(ctx, |pane_group, ctx| {
@@ -582,11 +583,19 @@ pub(crate) fn pane_list(
             // plain terminal and Warp Agent panes, where Rich Input does not
             // exist at all -- there rich_input_open=false means absent, not
             // closed, and external tools must not try to open it.
-            let cli_agent = terminal_view.as_ref().and_then(|tv| {
-                CLIAgentSessionsModel::as_ref(ctx)
-                    .session(tv.id())
-                    .map(|session| session.agent.to_serialized_name())
-            });
+            let cli_agent_session = terminal_view
+                .as_ref()
+                .and_then(|tv| CLIAgentSessionsModel::as_ref(ctx).session(tv.id()));
+            let cli_agent = cli_agent_session.map(|session| session.agent.to_serialized_name());
+            let cli_agent_status = cli_agent_session
+                .filter(|session| session.supports_rich_status())
+                .map(|session| match session.status {
+                    CLIAgentSessionStatus::InProgress => "in_progress",
+                    CLIAgentSessionStatus::Success => "success",
+                    CLIAgentSessionStatus::Failed { .. } => "failed",
+                    CLIAgentSessionStatus::Blocked { .. } => "blocked",
+                    CLIAgentSessionStatus::Cancelled => "cancelled",
+                });
             // How this pane's session reached its host, as reported by the
             // SSH wrapper. `remote_host_id` says which host Warp bound the
             // session to; this says what to run to get there again, which
@@ -627,6 +636,7 @@ pub(crate) fn pane_list(
                 rich_input_open,
                 ssh_destination,
                 cli_agent,
+                cli_agent_status,
                 terminal_selection,
                 input_selection,
             )
@@ -806,6 +816,7 @@ pub(crate) fn pane_list(
             "code_review_open": code_review_open,
             "rich_input_open": rich_input_open,
             "cli_agent": cli_agent,
+            "cli_agent_status": cli_agent_status,
             "color_configured": color.is_some(),
             "color": color,
             // Where the person is. `is_active` is per tab -- every tab has one
