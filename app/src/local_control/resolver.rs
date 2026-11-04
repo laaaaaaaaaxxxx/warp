@@ -47,6 +47,9 @@ pub(crate) fn validate_action_params(action: &::local_control::Action) -> Result
         ActionParameterSpec::LspEnable => {
             parse_params::<::local_control::protocol::LspEnableParams>(action)
         }
+        ActionParameterSpec::LspRestart => {
+            parse_params::<::local_control::protocol::LspRestartParams>(action)
+        }
         ActionParameterSpec::Namespace => parse_params::<NamespaceParams>(action),
         ActionParameterSpec::PageQuery => parse_params::<PageQueryParams>(action),
         ActionParameterSpec::PaneMove => {

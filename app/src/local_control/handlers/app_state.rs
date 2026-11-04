@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use ::local_control::protocol::{
     Axis as ControlAxis, Direction as ControlDirection, DirectionParams, FileOpenParams,
-    LspEnableParams, PageQueryParams, PaneMoveDestination, PaneMoveParams, PaneSplitParams,
-    QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams, TabActivationMode,
-    TabCreateParams, TabTarget, TabType, TargetSelector, TextParams,
+    LspEnableParams, LspRestartParams, PageQueryParams, PaneMoveDestination, PaneMoveParams,
+    PaneSplitParams, QueryParams, ResizeParams, RightPanelResizeParams, TabActivateParams,
+    TabActivationMode, TabCreateParams, TabTarget, TabType, TargetSelector, TextParams,
 };
 use ::local_control::{ActionKind, ControlError, ErrorCode, InstanceId};
 use serde_json::json;
@@ -68,6 +68,7 @@ pub(crate) fn handle(
             focus_window(instance_id, action, target, ctx)
         }
         ActionKind::CodeLspEnable => code_lsp_enable(instance_id, params, target, ctx),
+        ActionKind::CodeLspRestart => code_lsp_restart(instance_id, params, ctx),
         ActionKind::CodeNavigateBack => workspace_action(
             instance_id,
             ActionKind::CodeNavigateBack,
@@ -357,6 +358,38 @@ fn code_lsp_enable(
         target,
         ctx,
     )
+}
+
+/// Restarts every language server registered for the workspace.
+///
+/// A workspace without one is an error rather than an `ok` that restarted nothing:
+/// the key bound to this runs in any repo, and only some have a server.
+fn code_lsp_restart(
+    instance_id: &Option<InstanceId>,
+    params: &serde_json::Value,
+    ctx: &mut ModelContext<LocalControlBridge>,
+) -> Result<serde_json::Value, ControlError> {
+    let action = ActionKind::CodeLspRestart;
+    let LspRestartParams { workspace_path } = decode_params(params)?;
+
+    let servers = lsp::LspManagerModel::as_ref(ctx)
+        .servers_for_workspace(Path::new(&workspace_path))
+        .cloned()
+        .unwrap_or_default();
+    if servers.is_empty() {
+        return Err(ControlError::new(
+            ErrorCode::MissingTarget,
+            format!(
+                "{} found no language server for {workspace_path}",
+                action.as_str()
+            ),
+        ));
+    }
+
+    for server in servers {
+        server.update(ctx, |server, ctx| server.restart(ctx));
+    }
+    Ok(ack(instance_id, action))
 }
 
 fn surface_workspace_action(

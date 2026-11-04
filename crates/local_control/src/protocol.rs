@@ -191,6 +191,13 @@ pub struct LspEnableParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct LspRestartParams {
+    /// Absolute path of the workspace (repo root) whose language servers restart.
+    pub workspace_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TabActivateParams {
     pub mode: TabActivationMode,
 }

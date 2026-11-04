@@ -372,6 +372,17 @@ fn retained_action_examples() -> Vec<(ActionKind, Vec<&'static str>)> {
             vec!["warpctrl", "pane", "move", "--dest-tab", "7023"],
         ),
         (
+            ActionKind::CodeLspRestart,
+            vec![
+                "warpctrl",
+                "code",
+                "lsp",
+                "restart",
+                "--workspace",
+                "/root/project/warp",
+            ],
+        ),
+        (
             ActionKind::CodeLspEnable,
             vec![
                 "warpctrl",
@@ -794,6 +805,9 @@ fn parsed_action_kind(command: &ControlCommand) -> Option<ActionKind> {
         ControlCommand::Code(command) => match command {
             crate::local_control::CodeCommand::Lsp(command) => match command {
                 crate::local_control::CodeLspCommand::Enable(_) => Some(ActionKind::CodeLspEnable),
+                crate::local_control::CodeLspCommand::Restart(_) => {
+                    Some(ActionKind::CodeLspRestart)
+                }
             },
             crate::local_control::CodeCommand::Navigate(command) => match command {
                 crate::local_control::CodeNavigateCommand::Back(_) => {

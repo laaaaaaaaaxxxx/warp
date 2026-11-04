@@ -670,6 +670,8 @@ pub enum CodeNavigateCommand {
 pub enum CodeLspCommand {
     /// Enable and start a language server for a workspace.
     Enable(CodeLspEnableArgs),
+    /// Restart every language server of a workspace.
+    Restart(CodeLspRestartArgs),
 }
 
 #[derive(Debug, Clone, Args)]
@@ -681,6 +683,16 @@ pub struct CodeLspEnableArgs {
     /// Language server binary name, e.g. rust-analyzer.
     #[arg(long = "server")]
     pub server_type: String,
+
+    #[command(flatten)]
+    pub target: TargetArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+pub struct CodeLspRestartArgs {
+    /// Absolute path of the workspace (repo root).
+    #[arg(long = "workspace")]
+    pub workspace_path: String,
 
     #[command(flatten)]
     pub target: TargetArgs,

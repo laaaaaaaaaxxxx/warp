@@ -46,6 +46,7 @@ pub enum ActionParameterSpec {
     Key,
     KeyValue,
     LspEnable,
+    LspRestart,
     Namespace,
     PageQuery,
     PaneMove,
@@ -328,6 +329,7 @@ define_action_catalog! {
 
     code {
         CodeLspEnable => { name: "code.lsp.enable", status: Implemented, target: Code, params: LspEnable, result: Acknowledgement },
+        CodeLspRestart => { name: "code.lsp.restart", status: Implemented, target: Code, params: LspRestart, result: Acknowledgement },
         CodeNavigateBack => { name: "code.navigate.back", status: Implemented, target: Code, params: None, result: Acknowledgement },
         CodeNavigateForward => { name: "code.navigate.forward", status: Implemented, target: Code, params: None, result: Acknowledgement },
     }

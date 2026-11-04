@@ -3,11 +3,11 @@ use local_control::discovery::InstanceRecord;
 use local_control::protocol::{
     Action, ActionKind, ActionNameParams, BackgroundParams, BindingNameParams, BooleanValueParams,
     ColorValueParams, ControlError, DirectionParams, EmptyParams, ErrorCode, FileOpenParams,
-    KeyParams, KeyValueParams, LspEnableParams, PageQueryParams, PaneMoveDestination,
-    PaneMoveParams, PaneSplitParams, QueryParams, RenameParams, RequestEnvelope, ResizeParams,
-    RightPanelResizeParams, SelectionRange, SelectionRangesParams, SettingListParams,
-    TabActivateParams, TabActivationMode, TabCloseMode, TabCloseParams, TabCreateParams,
-    TabGroupMoveParams, TabSelector, TextParams, ThemeNameParams,
+    KeyParams, KeyValueParams, LspEnableParams, LspRestartParams, PageQueryParams,
+    PaneMoveDestination, PaneMoveParams, PaneSplitParams, QueryParams, RenameParams,
+    RequestEnvelope, ResizeParams, RightPanelResizeParams, SelectionRange, SelectionRangesParams,
+    SettingListParams, TabActivateParams, TabActivationMode, TabCloseMode, TabCloseParams,
+    TabCreateParams, TabGroupMoveParams, TabSelector, TextParams, ThemeNameParams,
 };
 use local_control::selection::select_instance;
 use serde::Serialize;
@@ -861,6 +861,14 @@ pub(super) fn run_code_command(
                 LspEnableParams {
                     workspace_path: args.workspace_path,
                     server_type: args.server_type,
+                },
+                output_format,
+            ),
+            CodeLspCommand::Restart(args) => run_action_with_params(
+                args.target,
+                ActionKind::CodeLspRestart,
+                LspRestartParams {
+                    workspace_path: args.workspace_path,
                 },
                 output_format,
             ),
