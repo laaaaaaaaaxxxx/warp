@@ -29,6 +29,8 @@ fn main() -> Result<()> {
     state = state.with_additional_features(&[
         warp_core::features::FeatureFlag::WarpControlCli,
         warp_core::features::FeatureFlag::SshRemoteServer,
+        // Language servers leave file watching to Warp; this forwards disk changes to them.
+        warp_core::features::FeatureFlag::LSPAsATool,
     ]);
     ChannelState::set(state);
 
