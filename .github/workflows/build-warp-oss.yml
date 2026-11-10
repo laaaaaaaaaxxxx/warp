@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14          # Apple Silicon 原生 = aarch64-apple-darwin
+    runs-on: macos-26          # Apple Silicon 原生 = aarch64-apple-darwin
     timeout-minutes: 120
     steps:
       - name: Checkout (含 LFS)
