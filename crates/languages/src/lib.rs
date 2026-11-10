@@ -18,7 +18,7 @@ lazy_static! {
     static ref LANGUAGE_REGISTRY: LanguageRegistry = LanguageRegistry::new();
 }
 
-pub const SUPPORTED_LANGUAGES: [&str; 35] = [
+pub const SUPPORTED_LANGUAGES: [&str; 36] = [
     "rust",
     "golang",
     "yaml",
@@ -54,6 +54,7 @@ pub const SUPPORTED_LANGUAGES: [&str; 35] = [
     "dockerfile",
     "nix",
     "markdown",
+    "makefile",
 ];
 
 /// Registry that holds all of the supported languages.
@@ -118,6 +119,7 @@ fn normalize_language_name(name: &str) -> &str {
         "kt" => "kotlin",
         "docker" | "containerfile" => "dockerfile",
         "md" => "markdown",
+        "make" => "makefile",
         other => other,
     }
 }
@@ -149,6 +151,9 @@ fn language_by_filename_parts(
             // Dockerfiles
             "Dockerfile" | "Containerfile" | "dockerfile" | "containerfile" => {
                 return language_by_name("dockerfile");
+            }
+            "Makefile" | "makefile" | "GNUmakefile" => {
+                return language_by_name("makefile");
             }
             _ => {
                 // Also match Dockerfile variants like Dockerfile.dev, Dockerfile.prod
@@ -296,13 +301,17 @@ fn get_arborium_highlight_query(lang: &str) -> Option<&str> {
         "vue" => Some(&arborium::lang_vue::HIGHLIGHTS_QUERY),
         "dockerfile" => Some(arborium::lang_dockerfile::HIGHLIGHTS_QUERY),
         "markdown" => Some(arborium::lang_markdown::HIGHLIGHTS_QUERY),
+        "makefile" => Some(arborium_make::HIGHLIGHTS_QUERY),
         _ => None,
     }
 }
 
 fn load_language(lang: &str) -> Option<Language> {
     let arborium_name = to_arborium_name(lang);
-    let grammar = arborium::get_language(arborium_name)?;
+    let grammar = match lang {
+        "makefile" => arborium_make::language().into(),
+        _ => arborium::get_language(arborium_name)?,
+    };
 
     let config_path = [lang, "config.yaml"].join("\\");
     let config = load_yaml(&config_path);
@@ -335,10 +344,12 @@ fn load_language(lang: &str) -> Option<Language> {
     let symbols_query_path = [lang, "identifiers.scm"].join("\\");
     let symbols_query = load_query(&symbols_query_path, &grammar);
 
-    let injections_query = (lang == "markdown").then(|| {
-        Query::new(&grammar, arborium::lang_markdown::INJECTIONS_QUERY)
-            .expect("arborium injections query should be valid")
-    });
+    let injections_query = match lang {
+        "markdown" => Some(arborium::lang_markdown::INJECTIONS_QUERY),
+        "makefile" => Some(arborium_make::INJECTIONS_QUERY),
+        _ => None,
+    }
+    .map(|query| Query::new(&grammar, query).expect("arborium injections query should be valid"));
 
     Some(Language {
         highlight_query,

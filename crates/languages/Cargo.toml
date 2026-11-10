@@ -10,6 +10,7 @@ serde.workspace = true
 serde_yaml.workspace = true
 rust-embed.workspace = true
 arborium.workspace = true
+arborium-make = "2.18"
 lazy_static.workspace = true
 warp_editor = { path = "../editor" }
 warp_util.workspace = true

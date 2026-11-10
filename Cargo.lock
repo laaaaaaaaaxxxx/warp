@@ -892,6 +892,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "arborium-make"
+version = "2.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bed9575f27d799d26b522d101f50abdb7f4f06d6a7065dbed41a6834b5dfe21"
+dependencies = [
+ "arborium-sysroot",
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "arborium-markdown"
 version = "2.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1041,9 +1052,9 @@ dependencies = [
 
 [[package]]
 name = "arborium-sysroot"
-version = "2.13.0"
+version = "2.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ce9624bea89e41ab45de48c1e94d4a8587f9ed429801314c91255149a852cc9"
+checksum = "ddd9d120dd5df8b918cd96676a88f1233a66f10687d415b69f70b3396acddddf"
 dependencies = [
  "cc",
  "dlmalloc",
@@ -7635,6 +7646,7 @@ name = "languages"
 version = "0.0.0"
 dependencies = [
  "arborium",
+ "arborium-make",
  "lazy_static",
  "rust-embed 8.7.2",
  "serde",
