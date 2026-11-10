@@ -793,3 +793,76 @@ fn test_a_path_in_the_buffer_does_not_open_the_menu() {
         }
     });
 }
+
+#[test]
+fn test_control_plane_reopens_a_dismissed_menu_over_a_leading_path() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(
+            &mut app, None, /* history_file_commands */
+            None,
+        )
+        .await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.set_input_mode_natural_language_detection(ctx);
+            input.user_insert("/root/project/warp/app ", ctx);
+            input.open_slash_commands_at_cursor(ctx);
+        });
+        input.read(&app, |input, ctx| {
+            assert!(input.suggestions_mode_model.as_ref(ctx).is_slash_commands());
+        });
+
+        input.update(&mut app, |input, ctx| input.editor_escape(ctx));
+        input.read(&app, |input, ctx| {
+            assert!(!input.suggestions_mode_model.as_ref(ctx).is_slash_commands());
+        });
+
+        input.update(&mut app, |input, ctx| {
+            input.replace_buffer_content("/root/project/warp/app ", ctx);
+        });
+        input.update(&mut app, |input, ctx| {
+            input.open_slash_commands_at_cursor(ctx)
+        });
+        input.read(&app, |input, ctx| {
+            assert_eq!(input.buffer_text(ctx), "/root/project/warp/app /");
+            assert!(input.suggestions_mode_model.as_ref(ctx).is_slash_commands());
+        });
+    });
+}
+
+#[test]
+fn test_a_path_pasted_after_a_dismissal_does_not_open_the_menu() {
+    App::test((), |mut app| async move {
+        initialize_app(&mut app);
+
+        let terminal = add_window_with_bootstrapped_terminal(
+            &mut app, None, /* history_file_commands */
+            None,
+        )
+        .await;
+        let input = terminal.read(&app, |terminal, _| terminal.input().clone());
+
+        input.update(&mut app, |input, ctx| {
+            input.set_input_mode_natural_language_detection(ctx);
+            input.user_insert("/root/project/warp/app ", ctx);
+            input.open_slash_commands_at_cursor(ctx);
+        });
+        input.update(&mut app, |input, ctx| input.editor_escape(ctx));
+        input.update(&mut app, |input, ctx| {
+            input.replace_buffer_content("/root/project/warp/app ", ctx);
+        });
+        input.update(&mut app, |input, ctx| {
+            input.user_insert("/root/project/warp/app/src/lib.rs", ctx);
+        });
+        input.read(&app, |input, ctx| {
+            assert!(!input.suggestions_mode_model.as_ref(ctx).is_slash_commands());
+            assert!(matches!(
+                input.slash_command_model.as_ref(ctx).state(),
+                SlashCommandEntryState::None
+            ));
+        });
+    });
+}

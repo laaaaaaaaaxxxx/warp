@@ -256,6 +256,7 @@ impl SlashCommandModel {
     /// Record where the next slash lands, so the menu keys off it instead of the buffer's head.
     pub fn set_explicit_trigger(&mut self, at: usize) {
         self.explicit_trigger = Some(at);
+        self.lifecycle = InputDrivenInlineMenuLifecycle::default();
     }
 
     fn disable_until_empty_buffer(&mut self, input_is_empty: bool, ctx: &mut ModelContext<Self>) {
