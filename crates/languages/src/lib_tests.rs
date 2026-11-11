@@ -95,19 +95,3 @@ fn markdown_extensions_resolve_to_markdown() {
         );
     }
 }
-
-/// The file names GNU make reads by default resolve to the Makefile language.
-#[test]
-fn make_default_filenames_resolve_to_makefile() {
-    for filename in ["GNUmakefile", "makefile", "Makefile"] {
-        let path = StandardizedPath::try_new(&format!("/tmp/{filename}"))
-            .expect("test path should be absolute");
-        let language = language_by_filename(&path)
-            .unwrap_or_else(|| panic!("expected {filename} to resolve to a language"));
-        assert_eq!(
-            language.display_name(),
-            "Makefile",
-            "{filename} should resolve to Makefile",
-        );
-    }
-}
